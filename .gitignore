@@ -1,0 +1,5 @@
+.DS_Store
+captures/*
+!captures/.gitkeep
+.build/
+DerivedData/
