@@ -49,11 +49,14 @@ ios-format: ## Swift ソースを整形する（SwiftFormat）
 ios-format-check: ## 整形差分を検査する（書き込みなし、--lint モード）
 	cd $(IOS_DIR) && mint run nicklockwood/SwiftFormat swiftformat --lint .
 
-ios-test: ios-project ## シミュレータでテストを実行する
+ios-test: ios-project ## シミュレータでテストを実行する（利用可能な最新 iPhone を自動選択）
+	@SIM=$$(xcrun simctl list devices available 2>/dev/null | grep -Eo 'iPhone [0-9]+' | sort -V | tail -1); \
+	test -n "$$SIM" || { echo "→ 利用可能な iPhone シミュレータが見つかりません"; exit 1; }; \
+	echo "→ テスト実行先: $$SIM"; \
 	cd $(IOS_DIR) && xcodebuild \
 		-project CoreBluetoothPlayground.xcodeproj \
 		-scheme CoreBluetoothPlayground \
-		-destination 'platform=iOS Simulator,name=iPhone 17' \
+		-destination "platform=iOS Simulator,name=$$SIM" \
 		test $(SIM_NO_SIGN)
 
 flash-normal: _require-submodule ## 正常系 peripheral_uart を nRF52840 DK に書き込む

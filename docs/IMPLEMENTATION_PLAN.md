@@ -210,12 +210,14 @@ graph TD
 graph LR
     PR["push / pull_request"]
     PR --> MP["makefile-parse<br/>(ubuntu・軽量)"]
-    PR --> ID["idempotency<br/>(macOS・軽量)"]
+    PR --> ID["idempotency<br/>(ubuntu・軽量)"]
     PR --> IB["ios-build<br/>(macOS・Xcode)"]
+    PR --> IT["ios-test<br/>(macOS・Xcode)"]
     PR --> SL["swiftformat-lint<br/>(macOS)"]
     MP --> G{"全ジョブ green?"}
     ID --> G
     IB --> G
+    IT --> G
     SL --> G
     G -->|yes| RV["人間レビュー → マージ"]
     G -->|no| FX["修正して再 push"]
@@ -226,8 +228,9 @@ graph LR
 | ジョブ | ランナー | 内容 | 重い依存 |
 | --- | --- | --- | --- |
 | `makefile-parse` | ubuntu | 全ターゲットの `make -n` dry-run パース、`.PHONY` 網羅、既定ゴール = help、依存ガードの存在を検証。 | なし |
-| `idempotency` | macOS | 読み取り専用ターゲットと `clean` / `clean-captures` を 2 回実行し、最終状態が不変であることを確認。 | なし |
+| `idempotency` | ubuntu | `help` / `clean` / `list-samples` を 2 回実行し、最終状態・出力が不変であることを確認。 | なし |
 | `ios-build` | macOS | `xcodegen generate` → `xcodebuild -sdk iphonesimulator`（署名無効）でビルドが通ること。 | Xcode |
+| `ios-test` | macOS | `xcodebuild test` で単体テストが通ること。実行先シミュレータは利用可能な最新 iPhone を動的解決。 | Xcode |
 | `swiftformat-lint` | macOS | `swiftformat --lint` で整形差分が無いこと。 | mint / SwiftFormat |
 
 CI で実行できない範囲を明示する。firmware のビルド・実機書き込み（`flash-*`）、Sniffer キャプチャ（`capture-*`）、環境検証（`verify`）は DK・ドングル・NCS・Wireshark を要するため CI 対象外であり、手順書と実機での手動検証で補う。サブモジュールは SHA 固定で取り込み、その冪等性は submodule 側の CI が担保するため、本リポジトリの CI では submodule の重い `setup` を再実行しない。
@@ -252,7 +255,7 @@ graph LR
 
 | PR | 主な成果物 | 機械検証 |
 | --- | --- | --- |
-| PR1 | `README` / `.gitignore` / `docs/`（索引・意思決定ログ・対応表の種）/ `Makefile`（第 2 章の全ターゲット面、iOS 系は実働・firmware 系は依存ガード）/ `.github/workflows/`（4 章の CI: makefile-parse / idempotency / ios-build / swiftformat-lint）/ iOS 土台（`project.yml`・`Mintfile`・`.swiftformat`・`AppDelegate`・`SceneDelegate`・`SampleListViewController`・`Shared/BLEConstants`）/ **01_CentralScan を完全実装** | `xcodegen generate` 成功、`make ios-build` green、`make ios-format-check` 差分なし、`make list-samples`/`make help` 表示（CI 4 ジョブが green） |
+| PR1 | `README` / `.gitignore` / `docs/`（索引・意思決定ログ・対応表の種）/ `Makefile`（第 2 章の全ターゲット面、iOS 系は実働・firmware 系は依存ガード）/ `.github/workflows/`（4 章の CI: makefile-parse / idempotency / ios-build / ios-test / swiftformat-lint）/ iOS 土台（`project.yml`・`Mintfile`・`.swiftformat`・`AppDelegate`・`SceneDelegate`・`SampleListViewController`・`Shared/BLEConstants`）/ **01_CentralScan を完全実装** | `xcodegen generate` 成功、`make ios-build`/`make ios-test` green、`make ios-format-check` 差分なし、`make list-samples`/`make help` 表示（CI 5 ジョブが green） |
 | PR2 | `02_ConnectDiscover`（connect / discoverServices / discoverCharacteristics、UUID 指定有無の差）、`03_ReadWriteNotify`（read / write withResponse・withoutResponse / setNotifyValue / 各 didUpdate）。一覧へ追加 | build green + format-check |
 | PR3 | `04_Security`（暗号化要求キャラへの Read、ペアリング起動、didDisconnect、CBATTError 分類）、`05_PeripheralRole`（CBPeripheralManager で add(service)/startAdvertising/didReceiveRead/Write/updateValue）。Info.plist に Peripheral 用途文言を追加 | build green + format-check |
 | PR4 | サブモジュール `nrf52840-ble-debug-bootstrap` を `firmware/` に追加、Makefile の `setup`/`flash-normal`/`capture-*`/`verify` をサブモジュールへ委譲、`firmware/anomaly_*`（異常注入派生）と `flash-anomaly` の自前ビルド、`docs/` レポート雛形 | サブモジュール側 CI（dry-run パース・冪等性）に倣い、本体 Makefile も `make -n` パースと委譲先存在ガードを検証（NCS/west/Wireshark/実機はハードウェア依存で CI 不可、手順書で補う） |

@@ -97,6 +97,24 @@ jobs:
       - name: Build iOS app (mint bootstrap + xcodegen + xcodebuild)
         run: make ios-build
 
+  ios-test:
+    # 単体テストを機械ゲートとして強制する。XcodeGen と同じく Swift 6 を要するため macos-15 + 最新 Xcode。
+    name: iOS Test (Simulator)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+
+      - name: Install mint
+        run: brew install mint || true
+
+      - name: Run unit tests (xcodegen + xcodebuild test)
+        run: make ios-test
+
   swiftformat-lint:
     name: SwiftFormat Lint
     runs-on: macos-14
