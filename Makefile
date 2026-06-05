@@ -63,7 +63,7 @@ flash-normal: _require-submodule ## 正常系 peripheral_uart を nRF52840 DK �
 	$(MAKE) -C $(SUBMODULE_DIR) flash-dk BOARD=$(BOARD) SERIAL_PORT=$(SERIAL_PORT)
 
 flash-anomaly: _require-submodule ## 異常注入ファームウェアを書き込む（SAMPLE=xxx を指定）
-	@test -n "$(SAMPLE)" || { echo "→ SAMPLE が未指定です。例: make flash-anomaly SAMPLE=03_read_write_notify"; exit 1; }
+	@test -n "$(SAMPLE)" || { echo "→ SAMPLE が未指定です。例: make flash-anomaly SAMPLE=CBCharacteristic"; exit 1; }
 	@echo "→ flash-anomaly は PR4 で実装予定です"
 	@exit 1
 
