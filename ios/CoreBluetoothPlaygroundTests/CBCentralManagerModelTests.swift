@@ -1,12 +1,12 @@
 //
-//  CentralScanModelTests.swift
+//  CBCentralManagerModelTests.swift
 //  CoreBluetoothPlaygroundTests
 //
 
 @testable import CoreBluetoothPlayground
 import XCTest
 
-final class CentralScanModelTests: XCTestCase {
+final class CBCentralManagerModelTests: XCTestCase {
 
     func testNUSServiceUUID() {
         // Nordic UART Service の UUID が仕様どおりであること

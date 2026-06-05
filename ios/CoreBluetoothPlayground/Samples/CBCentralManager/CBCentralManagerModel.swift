@@ -1,5 +1,5 @@
 //
-//  CentralScanModel.swift
+//  CBCentralManagerModel.swift
 //  CoreBluetoothPlayground
 //
 
@@ -46,9 +46,9 @@ struct DiscoveredPeripheral {
     }
 }
 
-// MARK: - CentralScanModel
+// MARK: - CBCentralManagerModel
 
-final class CentralScanModel: NSObject {
+final class CBCentralManagerModel: NSObject {
 
     // MARK: Properties
 
@@ -123,7 +123,7 @@ final class CentralScanModel: NSObject {
 
 // MARK: - CBCentralManagerDelegate
 
-extension CentralScanModel: CBCentralManagerDelegate {
+extension CBCentralManagerModel: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         let stateDesc = switch central.state {
         case .unknown:

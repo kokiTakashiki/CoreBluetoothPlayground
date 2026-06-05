@@ -1,15 +1,15 @@
 //
-//  CentralScanViewController.swift
+//  CBCentralManagerViewController.swift
 //  CoreBluetoothPlayground
 //
 
 import UIKit
 
-final class CentralScanViewController: UIViewController {
+final class CBCentralManagerViewController: UIViewController {
 
     // MARK: Properties
 
-    private let model = CentralScanModel()
+    private let model = CBCentralManagerModel()
 
     // MARK: UI Components
 
@@ -81,7 +81,7 @@ final class CentralScanViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "01 Central Scan"
+        title = "CBCentralManager"
         view.backgroundColor = .systemBackground
         setupLayout()
         setupActions()
@@ -225,7 +225,7 @@ final class CentralScanViewController: UIViewController {
 
 // MARK: - UITableViewDataSource
 
-extension CentralScanViewController: UITableViewDataSource {
+extension CBCentralManagerViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         model.discovered.count
     }

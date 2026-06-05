@@ -6,17 +6,20 @@ Core Bluetooth フレームワークの挙動を単独で確認するための i
 
 本番アプリの構築ではなく、Core Bluetooth の各 API が**どのように振る舞うか**を実機で直接確認することを目的としています。Central 役の iOS 実機と、Peripheral 役の nRF52840 開発キット、そして USB ドングル + Wireshark による空中パケット観測の三者で検証を成立させます。
 
-## サンプル索引
+## インターフェース索引
 
-| No | タイトル | 主な確認内容 | 状態 |
-|----|----------|-------------|------|
-| 01 | Central Scan | `scanForPeripherals` / フィルタ / 重複制御 | 実装済み |
-| 02 | Connect & Discover | `connect` / `discoverServices` / `discoverCharacteristics` | 予定 (PR2) |
-| 03 | Read / Write / Notify | `readValue` / `writeValue` / `setNotifyValue` | 予定 (PR2) |
-| 04 | Security | 暗号化要求 / ペアリング / `CBATTError` | 予定 (PR3) |
-| 05 | Peripheral Role | `CBPeripheralManager` / `startAdvertising` / GATT サーバ構築 | 予定 (PR3) |
+サンプルは Core Bluetooth の公式インターフェース（クラス）単位で管理します。全シンボルが専用画面を持ち、1 インターフェースずつ増分で網羅していきます。
 
-詳細は [docs/interface-mapping.md](docs/interface-mapping.md) を参照してください。
+| インターフェース | 主な確認内容 | 状態 |
+|-----------------|-------------|------|
+| `CBCentralManager` | 状態・スキャン・接続/切断を操作して観察 | 実装済み（PR1） |
+| `CBPeripheral` | 探索・read/write・RSSI 取得を操作して観察 | 予定 |
+| `CBCharacteristic` | read / write / notify・indicate / properties | 予定 |
+| `CBDescriptor` | 記述子の探索・read/write | 予定 |
+| `CBPeripheralManager` | ローカル GATT・広告・updateValue を操作 | 予定 |
+| その他の全インターフェース | 順次追加 | 予定 |
+
+全インターフェースの一覧と状態は [docs/interface-mapping.md](docs/interface-mapping.md) を参照してください。
 
 ## クイックスタート
 

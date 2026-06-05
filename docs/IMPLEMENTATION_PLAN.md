@@ -2,7 +2,7 @@
 
 **対象設計書:** DESIGN-002（サンプルコード集リポジトリ設計書）
 **日付:** 2026-06-02
-**前提:** 単一アプリ + サンプル一覧メニュー / UIKit（テンプレート踏襲）/ フェーズ分割は本書で確定
+**前提:** 単一アプリにインターフェース一覧メニュー。View はインターフェース単位、実装は共通。UIKit でテンプレートを踏襲。1 インターフェースずつ増分で全 Core Bluetooth インターフェースを網羅する。
 
 ---
 
@@ -11,8 +11,8 @@
 | 章 | 題 |
 | --- | --- |
 | 1 | 背景と目的 |
-| 2 | Makefile の設計（コマンド面の確定） |
-| 3 | リポジトリ構造の確定 |
+| 2 | iOS サンプルアプリの構造 |
+| 3 | Makefile の設計（コマンド面の確定） |
 | 4 | GitHub Actions の設計（機械ゲート） |
 | 5 | フェーズ分割 |
 | 6 | 規約 |
@@ -23,14 +23,15 @@
 | 付録 C | コミット方針（spec + ソースのみ。生成物は持たない） |
 | 付録 D | テンプレートの扱い（フィージビリティ実測済み） |
 | 付録 E | firmware 環境（サブモジュール委譲） |
+| 付録 F | リポジトリ構造 |
 
 ---
 
 ## 1. 背景と目的
 
-本リポジトリの目的は、本番アプリケーションの構築ではなく、Core Bluetooth フレームワークの**挙動を単独で確認する**ことにある。本実装計画は、実運用に耐える単一アプリ構成へ落とし込み、機械検証可能なフェーズへ分割することを目的とする。
+本リポジトリの目的は、Core Bluetooth の挙動をインターフェース単位で確認することにある。Core Bluetooth はプロプライエタリで内部実装が見えない。CBCentralManager・CBPeripheral・CBCharacteristic といった各クラスが実際にどう振る舞うかは、外から経験的に観察するほかない。そこでサンプルの分割単位を公式クラスに対応づける。あるクラスの挙動を見たいとき、対応するサンプルが一意に定まる。
 
-検証は三者で成立する。Central 役を iOS 実機が担い、これが本来確認したいアプリ側の挙動である。Peripheral 役は nRF52840 開発キット上の Zephyr ファームウェアが担い、正常系と異常系を切り替えて機器側の振る舞いを完全に制御する。そして USB ドングルと Wireshark が空中のパケットを独立に記録し、客観的証拠を残す。この三者関係を次に示す。
+観察は三者で成立する。Central 役を iOS 実機が担い、これが本来確認したいアプリ側の挙動である。Peripheral 役を nRF52840 開発キットが担い、正常系と異常系を切り替えて機器側を完全に制御する。USB ドングルと Wireshark が空中のパケットを独立に記録し、客観的証拠を残す。三者の関係を次に示す。
 
 ```mermaid
 graph LR
@@ -53,11 +54,86 @@ graph LR
 
 ---
 
-## 2. Makefile の設計（コマンド面の確定）
+## 2. iOS サンプルアプリの構造
 
-本章では、検証手順を駆動するコマンド面、すなわち Makefile のターゲット群を確定する。構造やフェーズの詳細に入る前にこのコマンド面を固定し、後続のすべてのフェーズがこの面を拠り所にできるようにする。この順序を採る意図は付録 A に記す。
+本リポジトリは単一アプリにインターフェース一覧メニューを持たせる。署名とビルドが一度で済み、実機で即座に試せる。各サンプルは Core Bluetooth の 1 クラスにフォーカスし、`Samples/CBCentralManager/` のようにクラス名のディレクトリへ閉じる。クラスを単独実行できない事情は 1 章のとおりで、スキャン→接続→探索の土台は共有セッション層 `Shared/BLESession` に集約し、各サンプルはその上に自分のクラスのレンズだけを載せる。共有セッション層は使う時に導入する方針に従い、接続が初めて要る CBPeripheral の増分で入れる。CBCentralManager のスキャンだけなら要らない。
 
-Makefile は下表（2.1 節）に定める全ターゲット面を最初から定義する。`help` を `.DEFAULT_GOAL` とし、各ターゲットの `## ` コメントから自己文書化する。冪等性は which による存在検査・`test -f` による設定検査・依存ガードで担保する。
+iOS アプリの内部は、起動時に Core Bluetooth インターフェースの一覧メニューを表示し、行を選ぶと対応するクラスの専用画面へ遷移する。各画面は当該クラスのレンズであるモデルと画面を持ち、土台は共有セッション層に委ねる。一覧には文書化された全インターフェースを並べる。各画面での扱い、すなわち操作して検証するか説明に留めるかは 2.1 に定める。メニュー遷移の代表例を次に示す。
+
+```mermaid
+graph TD
+    LIST["InterfaceListViewController<br/>(rootViewController)"]
+    LIST -->|push| S1["CBCentralManager"]
+    LIST -->|push| S2["CBPeripheral"]
+    LIST -->|push| S3["CBCharacteristic"]
+    LIST -->|push| S4["CBDescriptor"]
+    LIST -->|push| S5["CBPeripheralManager"]
+
+    S1 --> SH["Shared/<br/>BLESession・BLEConstants"]
+    S2 --> SH
+    S3 --> SH
+    S4 --> SH
+    S5 --> SH
+```
+
+1 つのサンプルの層構成を次に示す。画面層とモデル層は当該インターフェースに閉じ、スキャン→接続→探索の土台は共有セッション層に集約する。これが「View はインターフェース単位・実装は共通」の二層構造である。点線は「参照のみ」を表す。
+
+```mermaid
+graph TD
+    subgraph "1 サンプル = 1 インターフェース（CBXxx にフォーカス）"
+        V["画面層: CBXxxViewController<br/>UI 表示・ユーザー操作"]
+        M["モデル層: CBXxxModel<br/>当該クラスのレンズ"]
+        V -->|"操作を依頼し状態を受け取る"| M
+    end
+    SESS["共有セッション層: Shared/BLESession<br/>スキャン→接続→探索の土台（CBPeripheral 増分で導入）"]
+    SH2["共有定数: Shared/BLEConstants<br/>NUS の UUID など"]
+    CB["システム: CoreBluetooth.framework"]
+    M -->|"土台を利用"| SESS
+    SESS -->|"API 呼び出し"| CB
+    M -.->|"UUID を参照"| SH2
+```
+
+### 2.1 全インターフェース一覧と画面での扱い
+
+最終目標は Core Bluetooth の全インターフェースを網羅することにある。文書化されたシンボルはすべて専用画面を持つ。画面の扱いは二通り。操作対象があるものは**操作して観察**し、基底クラス・定数・解説記事など操作対象がないものは**説明に留める**。下表で各シンボルの扱いを決める。
+
+| 区分 | シンボル | 扱い | 画面での内容 |
+| --- | --- | --- | --- |
+| Centrals | `CBCentral` | 操作 | iOS を Peripheral 役にし、購読してきた Central と maximumUpdateValueLength を観察 |
+| Centrals | `CBCentralManager` | 操作 | 状態・スキャン・接続/切断を操作して観察 |
+| Centrals | `CBCentralManagerDelegate` | 操作 | 各コールバックの発火を実機操作でログ表示 |
+| Peripherals | `CBPeripheral` | 操作 | 探索・read/write・RSSI 取得を操作して観察 |
+| Peripherals | `CBPeripheralDelegate` | 操作 | 探索・読み書き完了コールバックをログ表示 |
+| Peripherals | `CBPeripheralManager` | 操作 | ローカル GATT 公開・広告・updateValue を操作 |
+| Peripherals | `CBPeripheralManagerDelegate` | 操作 | 購読・読み書き要求コールバックをログ表示 |
+| Peripherals | `CBAttribute` | 説明 | 基底クラス。uuid プロパティと Service/Characteristic/Descriptor の継承関係を図解 |
+| Peripherals | `CBAttributePermissions` | 操作 | Mutable 定義時の権限を変え、読み書き可否を観察 |
+| Data Transfer | データ転送（解説記事） | 説明 | チャンク分割・MTU の要点を要約し CBCharacteristic 画面へ誘導 |
+| Services | `CBService` | 操作 | 探索結果のサービス階層を表示 |
+| Services | `CBMutableService` | 操作 | Peripheral 役でサービスを定義・公開 |
+| Services | `CBCharacteristic` | 操作 | read / write（with/without response）/ notify・indicate / properties / value |
+| Services | `CBMutableCharacteristic` | 操作 | Peripheral 役で特性を定義（properties・permissions） |
+| Services | `CBDescriptor` | 操作 | 記述子の探索・read/write |
+| Services | `CBMutableDescriptor` | 操作 | Peripheral 役で記述子を定義 |
+| Supporting | `CBManager` | 説明 | 基底クラス。state と authorization の意味を表示（実値は各 Manager 画面で） |
+| Supporting | `CBATTRequest` | 操作 | Peripheral 役で受信した read/write 要求の中身をログ |
+| Supporting | `CBPeer` | 説明 | 基底クラス。identifier の位置づけを図解 |
+| Supporting | `CBUUID` | 操作 | 文字列↔UUID 変換と定義済み UUID を表示 |
+| Errors | `CBError` / `CBError.Code` | 操作 | 接続失敗などを誘発しエラーコードを分類表示 |
+| Errors | `CBErrorDomain` | 説明 | 定数。エラー分類での役割を明記 |
+| Errors | `CBATTError` / `CBATTError.Code` | 操作 | 暗号化 Read 失敗などで ATT エラーを分類表示 |
+| Errors | `CBATTErrorDomain` | 説明 | 定数。ATT エラー分類での役割を明記 |
+| Variables | `CBUUIDCharacteristicObservationScheduleString` | 説明 | 定数 UUID。意味を明記し、対応記述子を持つ FW があれば操作観察へ拡張 |
+
+「操作」は実機での操作と観察で検証し、「説明」は操作対象を持たないため画面上の解説に留める。いずれも専用画面を持ち、全インターフェースが一覧から到達できる。
+
+---
+
+## 3. Makefile の設計（コマンド面の確定）
+
+本章では、検証手順を駆動するコマンド面、すなわち Makefile のターゲット群を確定する。フェーズの詳細に入る前にこのコマンド面を固定し、後続のすべてのフェーズがこの面を拠り所にできるようにする。この順序を採る意図は付録 A に記す。
+
+Makefile は下表（3.1 節）に定める全ターゲット面を最初から定義する。`help` を `.DEFAULT_GOAL` とし、各ターゲットの `## ` コメントから自己文書化する。冪等性は which による存在検査・`test -f` による設定検査・依存ガードで担保する。
 
 **firmware と観測（Sniffer）の環境構築・書き込み・検証は自前で再発明せず、git サブモジュール `nrf52840-ble-debug-bootstrap` の Makefile へ委譲する**。サブモジュールの責務・ターゲット・変数の 3 点は付録 E に整理する。すなわち `setup` は firmware 側をサブモジュールの `make setup` に任せる。これは NCS・Wireshark・nRF Sniffer・nrfjprg/J-Link・west の 5 つのツールの導入と、正常系 `peripheral_uart` のビルドまでを行う。`flash-normal` はサブモジュールの `flash-dk`、`verify` はサブモジュールの `verify` を呼ぶ。`flash-anomaly` のみ、サブモジュールが取得した NCS ツリーを使って本リポジトリの `firmware/anomaly_*/` をビルド・書き込みする自前処理とする。これらハードウェア依存ターゲットは、サブモジュール未取得・実機未接続のときは回復手順（`git submodule update --init` / `make setup`）を示して停止する（依存ガード）。各ターゲットをどのフェーズで実装するかは 5 章に示す。
 
@@ -98,7 +174,7 @@ graph TD
     CS --> RS
 ```
 
-### 2.1 ターゲット一覧（想定インターフェース）
+### 3.1 ターゲット一覧（想定インターフェース）
 
 確定させるコマンド面を下表に定義する。`help` を既定とし Makefile 冒頭に置く。アンダースコア始まりは内部ターゲットで直接実行を想定しない。ツール・サブモジュール・実機の 3 つの前提のいずれかを欠く場合は、各ターゲットが回復手順（`make setup` や `git submodule update --init`）を示して停止する（依存ガード）。各ターゲットをどのフェーズで実装するかは 5 章に示す。
 
@@ -125,13 +201,13 @@ graph TD
 | `clean-captures` | — | `captures/` のキャプチャ成果物を削除。 | 対象不在でも正常終了。 |
 | `reset` | — | 生成物を削除し初期状態へ戻す。再構築は `setup`。 | 削除対象不在でも正常終了。 |
 
-### 2.2 開発オプション（変数インターフェース）
+### 3.2 開発オプション（変数インターフェース）
 
 ターゲットの挙動を制御する変数を下表に定める。いずれもコマンドライン引数での指定を前提とし、未指定時は安全側の既定値または明示エラーを採る。firmware 系の変数（`BOARD` / `NCS_VERSION` / `SERIAL_PORT`）はサブモジュールへそのまま引き渡すため、既定値と意味はサブモジュールに合わせる（付録 E）。
 
 | オプション | 用途 | 指定例 | 注記 |
 | --- | --- | --- | --- |
-| `SAMPLE` | 検証対象サンプルの指定 | `run-sample SAMPLE=03_read_write_notify` | `flash-anomaly` / `run-sample` で必須。未指定はエラー。 |
+| `SAMPLE` | 検証対象サンプル（インターフェース）の指定 | `run-sample SAMPLE=CBCharacteristic` | `flash-anomaly` / `run-sample` で必須。未指定はエラー。 |
 | `BOARD` | ビルド対象ボードの指定 | `flash-normal BOARD=nrf52840dk_nrf52840` | 既定値は `nrf52840dk_nrf52840`（サブモジュール準拠）。 |
 | `SERIAL_PORT` | 書き込み対象ドングルの**シリアル番号** | `flash-anomaly SERIAL_PORT=683XXXXXX` | tty パスではなくシリアル番号。未指定は DFU 検出で自動選択、複数検出時に指定（サブモジュール準拠）。 |
 | `CAPTURE_NAME` | 保存 pcap ファイル名 | `capture-start CAPTURE_NAME=read_anomaly` | 未指定はサンプル名 + タイムスタンプで自動命名。 |
@@ -140,71 +216,13 @@ graph TD
 
 ---
 
-## 3. リポジトリ構造の確定
-
-本リポジトリは「単一アプリ + サンプル一覧メニュー」構成を採り、署名・ビルドを一度で済ませつつ実機で即座に試せるようにする。サンプルの独立性は **アプリ内のフォルダ分離**で担保する。すなわち各サンプルは `Samples/NN_Xxx/` に閉じ、共有コードは `Shared/` のみに置き、サンプル間の相互依存を作らない。これにより任意のサンプルを単独で開いて読める。
-
-リポジトリ全体の構造を次に示す。`ios/` 配下が iOS アプリ、`firmware/` 配下が開発キットのファームウェア、`captures/` がキャプチャ保存先、`docs/` が文書である。
-
-```mermaid
-graph TD
-    ROOT["CoreBluetoothPlayground/"]
-    ROOT --> RD["README.md / Makefile / .gitignore"]
-    ROOT --> DOCS["docs/<br/>索引・意思決定ログ・対応表・レポート"]
-    ROOT --> IOS["ios/<br/>XcodeGen プロジェクト"]
-    ROOT --> FW["firmware/<br/>開発キット側"]
-    ROOT --> CAP["captures/<br/>pcap + Xcode ログ"]
-
-    IOS --> PROJ["project.yml / Mintfile / .swiftformat"]
-    IOS --> APP["CoreBluetoothPlayground/"]
-    APP --> ENTRY["AppDelegate / SceneDelegate"]
-    APP --> SCR["Screens/<br/>SampleListViewController"]
-    APP --> SHARED["Shared/<br/>BLEConstants ほか共有層"]
-    APP --> SAMPLES["Samples/<br/>01_CentralScan … 05_PeripheralRole"]
-
-    FW --> SUB["nrf52840-ble-debug-bootstrap/<br/>(git submodule)<br/>環境構築 + 正常系 peripheral_uart + Sniffer + verify"]
-    FW --> FWA["anomaly_*/<br/>(自前の異常注入派生)"]
-```
-
-iOS アプリの内部は、起動時にサンプル一覧メニューを表示し、行を選ぶと対応するサンプル画面へ遷移する単純な構造とする。各サンプル画面は自分のモデル（CoreBluetooth を操作する層）と画面を持ち、共有層の `BLEConstants`（Nordic UART Service の UUID 定義など）のみを参照する。
-
-```mermaid
-graph TD
-    LIST["SampleListViewController<br/>(rootViewController)"]
-    LIST -->|push| S1["01 CentralScan<br/>VC + Model"]
-    LIST -->|push| S2["02 ConnectDiscover"]
-    LIST -->|push| S3["03 ReadWriteNotify"]
-    LIST -->|push| S4["04 Security"]
-    LIST -->|push| S5["05 PeripheralRole"]
-
-    S1 --> SH["Shared/BLEConstants ほか"]
-    S2 --> SH
-    S3 --> SH
-    S4 --> SH
-    S5 --> SH
-```
-
-1 つのサンプルの層構成を次に示す。画面層とモデル層はサンプル内に閉じ、サンプル外への依存は共有層の `BLEConstants` とシステムの CoreBluetooth.framework の 2 つだけである。点線は「参照のみ（状態を変えない）」を表す。
-
-```mermaid
-graph TD
-    subgraph "1 つのサンプル NN_Xxx（自己完結）"
-        V["画面層: XxxViewController<br/>UI 表示・ユーザー操作"]
-        M["モデル層: XxxModel<br/>CoreBluetooth を操作する層"]
-        V -->|"操作を依頼し状態を受け取る"| M
-    end
-    SH2["共有層: Shared/BLEConstants<br/>NUS の UUID 定義など"]
-    CB["システム: CoreBluetooth.framework<br/>CBCentralManager / CBPeripheral …"]
-    M -->|"API 呼び出し"| CB
-    M -.->|"UUID を参照"| SH2
-    V -.->|"UUID を参照"| SH2
-```
-
----
-
 ## 4. GitHub Actions の設計（機械ゲート）
 
-人間によるレビューの前に、自動ゲートが green であることを前提とする。CI は GitHub Actions で構成し、検証可能なもの、すなわちビルド・パース・実行ができるかは、意見ではなく事実に判定させる。重いツール（Xcode）を要するジョブと要さないジョブを分割し、軽量チェックはツールが無くても常時回るようにする。DK・ドングル・NCS・Wireshark の 4 つに依存する firmware／観測ターゲットは CI で実行できないため、CI は「構造の妥当性」と「ハードウェア非依存ターゲットの冪等性」を検証し、実機検証は `docs/` の手順書と手動検証で補う。この切り分けはサブモジュール `nrf52840-ble-debug-bootstrap` の CI（dry-run パース／冪等性／install スモーク）に倣う。テンプレート同梱の TestFlight・Danger ワークフローは採らず、本リポジトリ独自の検証ワークフロー（`.github/workflows/`）を置く。
+人間によるレビューの前に、自動ゲートが green であることを前提とする。CI は GitHub Actions で構成する。ビルド・パース・実行ができるかという検証可能な事実は、意見ではなく機械に判定させる。
+
+重いツールを要するジョブと要さないジョブは分ける。Xcode を要する iOS 系は macOS ランナーに、Makefile のパースや冪等性検査は ubuntu に置き、軽量チェックはツールが無くても常時回る。
+
+DK・ドングル・NCS・Wireshark に依存する firmware と観測のターゲットは CI で実行できない。そこで CI は構造の妥当性とハードウェア非依存ターゲットの冪等性だけを検証し、実機検証は `docs/` の手順書と手動で補う。この切り分けはサブモジュール `nrf52840-ble-debug-bootstrap` の CI に倣う。テンプレート同梱の TestFlight と Danger は使わず、本リポジトリ独自の検証ワークフローを置く。
 
 ```mermaid
 graph LR
@@ -239,48 +257,56 @@ CI で実行できない範囲を明示する。firmware のビルド・実機�
 
 ## 5. フェーズ分割
 
-フェーズは「成果物とそれを証明する機械検証をペアにした 1 PR」を単位とする。最初の PR で最もリスクの高い統合点を薄く貫いて**規約を固定**し、それがマージされた後に残りを展開する。開発ループは一本に保ち、サブエージェントが worktree 内で実装 → Claude がレビュー → 未解決 issue が無ければ PR 作成 → 人間レビュー → マージ、の順で進める。
+**1 増分 = 1 インターフェース ≈ 1 PR** を単位とし、成果物と機械検証をペアにする。一気に作らず、簡単なインターフェースから 1 つずつ積み上げ、最終的に全 Core Bluetooth インターフェースの検証網羅を目指す。最初の増分（土台）で最もリスクの高い統合点を薄く貫いて**規約を固定**し、以降は確定済みの型に沿って 1 クラスずつ足す。開発ループは一本に保ち、サブエージェントが worktree 内で実装 → Claude がレビュー → 未解決 issue が無ければ PR 作成 → 人間レビュー → マージ、の順で進める。
 
 ```mermaid
 graph LR
-    PR1["PR1 土台と縦切り<br/>scaffolding + Makefile<br/>+ iOS 土台 + 01_CentralScan<br/>【規約を固定】"]
-    PR2["PR2 Central 探索系<br/>02_ConnectDiscover<br/>03_ReadWriteNotify"]
-    PR3["PR3 セキュリティ & Peripheral 役<br/>04_Security<br/>05_PeripheralRole"]
-    PR4["PR4 firmware + Sniffer 自動化<br/>submodule 追加 + 委譲 + anomaly + レポート"]
-
-    PR1 --> PR2 --> PR3 --> PR4
+    F["土台 + CBCentralManager<br/>scaffolding/Makefile/CI/メニュー<br/>【規約を固定・実装済】"]
+    P["CBPeripheral<br/>(+ 共有 BLESession 導入)"]
+    C["CBCharacteristic<br/>(暗号化/CBATTError も観察)"]
+    D["CBDescriptor"]
+    PM["CBPeripheralManager<br/>(iOS を Peripheral 役)"]
+    FW["firmware + Sniffer<br/>(submodule 委譲・実観察を有効化)"]
+    EXT["任意拡張<br/>CBL2CAPChannel / error 深掘り 等"]
+    F --> P --> C --> D --> PM --> FW --> EXT
 ```
 
-各 PR の責務は次のとおり。第 2 章で確定したコマンド面のうち、PR1 では iOS 系を実働させ、firmware 系は依存ガードのまま据え置く。PR4 でその本体を埋める。
+増分の責務を次に示す。第 3 章で確定したコマンド面のうち iOS 系は土台増分から実働し、firmware 系は依存ガードのまま据え置いて firmware 増分で本体を埋める。`firmware + Sniffer` は「観測を有効化する」増分で、これにより各インターフェース増分の挙動を実機・pcap で客観観察できる（前後関係は柔軟。ハンズオン観察を早めたければ前倒し可）。
 
-| PR | 主な成果物 | 機械検証 |
-| --- | --- | --- |
-| PR1 | `README` / `.gitignore` / `docs/`（索引・意思決定ログ・対応表の種）/ `Makefile`（第 2 章の全ターゲット面、iOS 系は実働・firmware 系は依存ガード）/ `.github/workflows/`（4 章の CI: makefile-parse / idempotency / ios-build / ios-test / swiftformat-lint）/ iOS 土台（`project.yml`・`Mintfile`・`.swiftformat`・`AppDelegate`・`SceneDelegate`・`SampleListViewController`・`Shared/BLEConstants`）/ **01_CentralScan を完全実装** | `xcodegen generate` 成功、`make ios-build`/`make ios-test` green、`make ios-format-check` 差分なし、`make list-samples`/`make help` 表示（CI 5 ジョブが green） |
-| PR2 | `02_ConnectDiscover`（connect / discoverServices / discoverCharacteristics、UUID 指定有無の差）、`03_ReadWriteNotify`（read / write withResponse・withoutResponse / setNotifyValue / 各 didUpdate）。一覧へ追加 | build green + format-check |
-| PR3 | `04_Security`（暗号化要求キャラへの Read、ペアリング起動、didDisconnect、CBATTError 分類）、`05_PeripheralRole`（CBPeripheralManager で add(service)/startAdvertising/didReceiveRead/Write/updateValue）。Info.plist に Peripheral 用途文言を追加 | build green + format-check |
-| PR4 | サブモジュール `nrf52840-ble-debug-bootstrap` を `firmware/` に追加、Makefile の `setup`/`flash-normal`/`capture-*`/`verify` をサブモジュールへ委譲、`firmware/anomaly_*`（異常注入派生）と `flash-anomaly` の自前ビルド、`docs/` レポート雛形 | サブモジュール側 CI（dry-run パース・冪等性）に倣い、本体 Makefile も `make -n` パースと委譲先存在ガードを検証（NCS/west/Wireshark/実機はハードウェア依存で CI 不可、手順書で補う） |
+| 増分 | フォーカス | 主な成果物 / 観察する振る舞い | 機械検証 |
+| --- | --- | --- | --- |
+| 土台 + `CBCentralManager` | CBCentralManager | scaffolding / Makefile 全面 / CI / インターフェース一覧メニュー / `Shared/BLEConstants`。状態(CBManagerState)・スキャン・CBAdvertisementData・接続/切断を観察 | build/test/lint/parse/idempotency green |
+| `CBPeripheral` | CBPeripheral | 共有 `BLESession` を導入（スキャン→接続→探索）。サービス/キャラ/記述子の探索・name/RSSI を観察 | build + test + format-check |
+| `CBCharacteristic` | CBCharacteristic | read / write(with/without response) / notify・indicate / MTU・Write Long。暗号化要求キャラへの Read で CBATTError とペアリングを観察 | 〃 |
+| `CBDescriptor` | CBDescriptor | 記述子の探索・read/write（CCCD/CUD 等） | 〃 |
+| `CBPeripheralManager` | CBPeripheralManager | iOS を Peripheral 役に。ローカル GATT・広告・read/write 応答・updateValue。Info.plist に Peripheral 用途文言 | 〃 |
+| `firmware + Sniffer` | （観測基盤） | submodule 追加・`setup`/`flash-normal`/`capture-*`/`verify` を委譲・`anomaly_*` と `flash-anomaly` の自前ビルド・`docs/` レポート雛形 | `make -n` パースと委譲先存在ガード（HW は手動・手順書で補う） |
+| 任意拡張 | CBL2CAPChannel / CBError 深掘り 等 | 残るインターフェースを順次網羅 | 〃 |
 
-PR1 が最も重いが、これは playbook の「縦切り（vertical slice）」に相当する。ここで SwiftFormat 設定・Makefile の冪等パターン・サンプルのフォルダ分離・命名規約をすべて確定させ、PR2 以降は確定済みの型に沿ってサンプルを足すだけにする。
+土台増分が最も重いが、これは playbook の「縦切り（vertical slice）」に相当する。ここで SwiftFormat 設定・Makefile の冪等パターン・インターフェース分離・命名規約をすべて確定させ、以降の増分は確定済みの型に沿って 1 クラスずつ足すだけにする。
 
 ---
 
-## 6. 規約（PR1 で固定し全 PR が従う）
+## 6. 規約（土台増分で固定し全増分が従う）
 
-フォルダ命名は設計書の `NN_snake_case`（例 `01_central_scan`）を踏襲し、対応表とのトレーサビリティを保つ。Swift の型名は PascalCase（例 `CentralScanViewController` / `CentralScanModel`）とする。サンプルは `Samples/NN_Xxx/` に閉じ、共有は `Shared/` のみへ置き、サンプル間で相互参照しない。SwiftFormat 設定はテンプレートと同一（インデント 4・最大幅 120・`organizeDeclarations`・頭字語 ID/URL/UUID）とする。Makefile は `## ` で自己文書化し、内部ターゲットは `_` 始まりとして直接実行を想定しない。
+フォルダ名と型名は、フォーカスする Core Bluetooth クラス名をそのままキーにする。これで対応表と一意にたどれる。たとえば CBCentralManager のサンプルは `Samples/CBCentralManager/CBCentralManagerViewController.swift` と `CBCentralManagerModel.swift` になる。各サンプルは当該クラスに閉じ、土台は `BLESession` と `BLEConstants` を置く共有セッション層 `Shared/` だけを参照し、サンプル間では相互参照しない。SwiftFormat 設定はテンプレートと同一とし、インデント 4・最大幅 120・`organizeDeclarations`・頭字語 ID/URL/UUID を用いる。Makefile は `## ` で自己文書化し、`_` 始まりの内部ターゲットは直接実行を想定しない。
 
 ---
 
 ## 7. 検証方法（機械のみ）
 
-PR1（以降の iOS フェーズも同型）の検証は次のコマンド列で完結する。
+各 iOS 増分の検証は次のコマンドで完結する。
 
-1. `cd ios && mint run yonaskolb/XcodeGen xcodegen generate` — XcodeGen プロジェクト生成が成功する。
-2. `make ios-build` — `xcodebuild -sdk iphonesimulator` ビルドが green（署名無効化フラグ付き）。
-3. `make ios-format-check` — `swiftformat --lint` で差分が無い。
-4. `make list-samples` — 実装済みサンプルが列挙される。
-5. `make help` — 全ターゲットが説明付きで表示される。
+| コマンド | 期待する結果 |
+| --- | --- |
+| `cd ios && mint run yonaskolb/XcodeGen xcodegen generate` | プロジェクト生成が成功する |
+| `make ios-build` | シミュレータビルドが green（署名無効） |
+| `make ios-test` | 単体テストが green。実行先シミュレータは動的解決 |
+| `make ios-format-check` | `swiftformat --lint` で差分が無い |
+| `make list-samples` | 実装済みインターフェースが列挙される |
+| `make help` | 全ターゲットが説明付きで表示される |
 
-firmware（PR4）はハードウェア依存のため、機械検証は設定ファイル（`prj.conf` / `CMakeLists.txt`）の構文・参照 sanity に限定し、実機での書き込み・キャプチャは手順書で補う。
+firmware 増分はハードウェア依存のため、機械検証は設定ファイル `prj.conf` と `CMakeLists.txt` の構文・参照 sanity に限定し、実機での書き込み・キャプチャは手順書で補う。
 
 ---
 
@@ -292,7 +318,7 @@ firmware（PR4）はハードウェア依存のため、機械検証は設定フ
 
 ## 付録 A. インターフェース先行の方針について（設計判断ノート）
 
-本計画では、リポジトリ構造やフェーズの詳細より先に Makefile のターゲット群（2 章）を確定させた。これは実装を統括する立場からの方針判断であり、根拠は次のとおりである。作り始めの段階ほどインターフェースの設計にこだわると後半が楽になる。コマンド名と契約、すなわち依存・冪等性・未充足時の振る舞いの 3 点を先に固定しておけば、実装本体が後から差し替わってもインターフェースは不変に保たれ、各フェーズはこの不変点を拠り所に独立して進められる。逆にインターフェースを後付けにすると、フェーズごとに呼び出し方が揺れ、検証手順そのものが安定しない。本計画が Makefile を 2 章という早い位置に置いたのは、この安定点を最初に打ち込むためである。
+本計画では、フェーズの詳細より先に Makefile のターゲット群（3 章）を確定させた。これは実装を統括する立場からの方針判断であり、根拠は次のとおりである。作り始めの段階ほどインターフェースの設計にこだわると後半が楽になる。コマンド名と契約、すなわち依存・冪等性・未充足時の振る舞いの 3 点を先に固定しておけば、実装本体が後から差し替わってもインターフェースは不変に保たれ、各フェーズはこの不変点を拠り所に独立して進められる。逆にインターフェースを後付けにすると、フェーズごとに呼び出し方が揺れ、検証手順そのものが安定しない。本計画が Makefile を早い位置（3 章）に置いたのは、この安定点を最初に打ち込むためである。
 
 ---
 
@@ -302,16 +328,17 @@ firmware（PR4）はハードウェア依存のため、機械検証は設定フ
 
 | 章 | 目標規定文 |
 | --- | --- |
-| 1 背景と目的 | 本リポジトリが挙動確認に目的を限定すること、および三者（iOS・開発キット・観測者）の役割を確定する。 |
-| 2 Makefile の設計 | 検証手順を駆動するコマンド・インターフェースを最初に固定し、後続フェーズの拠り所とする。 |
-| 3 リポジトリ構造の確定 | 単一アプリ + メニュー方針の下で、サンプルの独立性をフォルダ分離で担保する構造を定義する。 |
-| 4 GitHub Actions の設計 | 人間レビューの前段に置く機械ゲート（CI）の構成と、ハードウェア依存部を CI 対象外とする切り分けを定義する。 |
-| 5 フェーズ分割 | 成果物と機械検証をペアにした 4 つの PR を定義し、規約固定の順序を確定する。 |
-| 6 規約 | PR1 で固定し全 PR が従う命名・フォルダ分離・整形・自己文書化の規約を定義する。 |
-| 7 検証方法 | 機械のみで完結する検証コマンド列と、ハードウェア依存部の扱いを定義する。 |
+| 1 背景と目的 | 挙動確認の目的、インターフェース単位の分割方針、三者による観察の役割を確定する。 |
+| 2 iOS サンプルアプリの構造 | インターフェース単位の View と共有セッション層の二層、サンプルの内部構造を定義する。 |
+| 3 Makefile の設計 | 検証手順を駆動するコマンド・インターフェースを最初に固定し、後続フェーズの拠り所とする。 |
+| 4 GitHub Actions の設計 | 人間レビューの前段に置く機械ゲートの構成と、ハードウェア依存部を CI 対象外とする切り分けを定義する。 |
+| 5 フェーズ分割 | 1 インターフェースずつの増分ロードマップと、各増分の機械検証を確定する。 |
+| 6 規約 | 土台増分で固定し全増分が従う命名・分離・整形・自己文書化の規約を定義する。 |
+| 7 検証方法 | 機械のみで完結する検証コマンドと、ハードウェア依存部の扱いを定義する。 |
 | 8 開発ループとエスカレーション | 委譲・レビュー・PR・意思決定カードの運用を定義する。 |
 | 付録 A | コマンド面を実装本体より先に確定させる順序を採った意図を、統括役（リードエンジニア）からの補足として記録する。 |
 | 付録 D テンプレートの扱い | iOSAppTemplate で土台を一度 bootstrap し不要レイヤを除去する方針を、フィージビリティ実測とともに確定する。 |
+| 付録 F リポジトリ構造 | ios・firmware・captures・docs の全体ディレクトリ構成を定義する。 |
 
 ---
 
@@ -353,7 +380,7 @@ graph LR
 
 実測で判明した二点を方針に織り込む。第一に、テンプレート生成物の `.gitignore` は `*.xcodeproj` / `*.xcworkspace` / 生成された `Info.plist` を初めから除外しており、「コミットするのは spec + ソースだけ、生成物は持たない」という方針はテンプレート標準そのものである（付録 C で明文化）。第二に、`--options` で `usePersistence:false` / `usePreferences:false` を渡しても **boolean が無視され** Persistence/Preferences の Package レイヤと依存が生成された（Genesis 0.9.0 の非対話モードの挙動）。
 
-これらを踏まえ、本計画は **生成器で土台を一度だけ bootstrap し、不要レイヤを除去して適応する**方針を採る。すなわち XcodeGen の `project.yml`、Mint による SwiftFormat / XcodeGen の SHA 固定、テンプレートと同一の `.swiftformat`、UIKit（`AppDelegate` / `SceneDelegate` / `UIViewController` + Auto Layout）、Makefile の自己文書化 `help` パターンを採用する。一方で playground に不要な fastlane・TestFlight・Danger・Persistence/Preferences レイヤと、それらへの `project.yml` の参照は bootstrap 後に除去する。Makefile は最小生成版を本書 2 章のターゲット面で置き換える。なお Genesis 専用の `genesis.yml` は生成器側（テンプレート）の関心事であり、具象アプリである本リポジトリには持ち込まない。これらの判断は意思決定ログ（`docs/DECISIONS.md`）へ記録し、PR から参照する。
+これらを踏まえ、本計画は **生成器で土台を一度だけ bootstrap し、不要レイヤを除去して適応する**方針を採る。すなわち XcodeGen の `project.yml`、Mint による SwiftFormat / XcodeGen の SHA 固定、テンプレートと同一の `.swiftformat`、UIKit（`AppDelegate` / `SceneDelegate` / `UIViewController` + Auto Layout）、Makefile の自己文書化 `help` パターンを採用する。一方で playground に不要な fastlane・TestFlight・Danger・Persistence/Preferences レイヤと、それらへの `project.yml` の参照は bootstrap 後に除去する。Makefile は最小生成版を本書 3 章のターゲット面で置き換える。なお Genesis 専用の `genesis.yml` は生成器側（テンプレート）の関心事であり、具象アプリである本リポジトリには持ち込まない。これらの判断は意思決定ログ（`docs/DECISIONS.md`）へ記録し、PR から参照する。
 
 ---
 
@@ -404,3 +431,29 @@ graph LR
 | `SERIAL_PORT` | 自動検出 | 書き込み対象ドングルの**シリアル番号**（tty パスではない） |
 
 注意点を二つ記す。第一に、サブモジュールは **Apple Silicon Mac 専用**（`check-os` が arm64 と Homebrew を要求する）であり、iOS 開発も macOS 専用であるため、本リポジトリ全体の対象は macOS/Apple Silicon に限定される。当初の uname による Linux 分岐は対象外として持たない。第二に、初回 `make setup` は NCS の数 GB ダウンロードを伴い時間がかかる。`SERIAL_PORT` がシリアル番号である点も、本体 Makefile から素通しで引き渡すため利用者に明示する。
+
+---
+
+## 付録 F. リポジトリ構造
+
+リポジトリ全体の構成を次に示す。`ios/` が iOS アプリ、`firmware/` が開発キット側、`captures/` がキャプチャ保存先、`docs/` が文書である。
+
+```mermaid
+graph TD
+    ROOT["CoreBluetoothPlayground/"]
+    ROOT --> RD["README.md / Makefile / .gitignore"]
+    ROOT --> DOCS["docs/<br/>索引・意思決定ログ・対応表・レポート"]
+    ROOT --> IOS["ios/<br/>XcodeGen プロジェクト"]
+    ROOT --> FW["firmware/<br/>開発キット側"]
+    ROOT --> CAP["captures/<br/>pcap + Xcode ログ"]
+
+    IOS --> PROJ["project.yml / Mintfile / .swiftformat"]
+    IOS --> APP["CoreBluetoothPlayground/"]
+    APP --> ENTRY["AppDelegate / SceneDelegate"]
+    APP --> SCR["Screens/<br/>InterfaceListViewController"]
+    APP --> SHARED["Shared/<br/>BLEConstants / BLESession（共有セッション層）"]
+    APP --> SAMPLES["Samples/<br/>CBCentralManager / CBPeripheral /<br/>CBCharacteristic / CBDescriptor / CBPeripheralManager …"]
+
+    FW --> SUB["nrf52840-ble-debug-bootstrap/<br/>(git submodule)<br/>環境構築 + 正常系 peripheral_uart + Sniffer + verify"]
+    FW --> FWA["anomaly_*/<br/>(自前の異常注入派生)"]
+```

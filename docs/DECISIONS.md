@@ -81,3 +81,13 @@
 **理由:** テストを書いても CI で実行しなければ将来の回帰を検知できない。機種名のハードコード（旧 `iPhone 17`）は実行環境によって存在せず非可搬であり、動的解決でどのマシン/CI でも通るようにする。
 
 **運用:** 解決は Makefile の `ios-test` レシピ内のシェルで行い（`$(shell)` は使わない）、`make -n` のパース時には実行されないようにする。
+
+---
+
+### D-010: サンプルの分割単位を Core Bluetooth の公式インターフェース（クラス）に対応づける
+
+**決定:** サンプルの分割単位を Core Bluetooth の公式クラス（インターフェース）に 1 対 1 で対応づける。全シンボルが専用画面を持ち、操作対象があれば操作で検証し、無ければ説明に留める。ディレクトリ名・型名は CB クラス名そのままをキーにする（例: `Samples/CBCentralManager/CBCentralManagerViewController.swift`）。
+
+**理由:** Core Bluetooth はプロプライエタリで内部が見えず、各インターフェースの振る舞いを単位で観察したいから。View はインターフェース単位・実装は共通の二層とし、接続等の土台は共有セッション層 `Shared/BLESession` に集約する。これにより「あるクラスの挙動を見たいとき対応するサンプルが一意に定まる」状態を維持できる。
+
+**影響:** `Samples/01_CentralScan/` → `Samples/CBCentralManager/`、`SampleListViewController` → `InterfaceListViewController`、`struct Sample` → `struct Interface`（フィールドは `symbol: String` と `make: () -> UIViewController`）、画面タイトルは「Core Bluetooth Interfaces」に変更。`docs/interface-mapping.md` は全インターフェース網羅トラッカーに更新。共有セッション層 `BLESession` は CBPeripheral 増分で初めて導入（今回は対象外）。

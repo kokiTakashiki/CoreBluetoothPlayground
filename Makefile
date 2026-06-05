@@ -78,7 +78,7 @@ verify: _require-submodule ## DK 接続・Sniffer インタフェースの環境
 	$(MAKE) -C $(SUBMODULE_DIR) verify
 
 run-sample: ## 指定サンプルの検証準備を一括実行する（SAMPLE=xxx を指定）
-	@test -n "$(SAMPLE)" || { echo "→ SAMPLE が未指定です。例: make run-sample SAMPLE=01_CentralScan"; exit 1; }
+	@test -n "$(SAMPLE)" || { echo "→ SAMPLE が未指定です。例: make run-sample SAMPLE=CBCentralManager"; exit 1; }
 	@$(MAKE) _require-submodule
 
 collect: ## Xcode ログと pcap を captures/ へタイムスタンプ付きで整理する

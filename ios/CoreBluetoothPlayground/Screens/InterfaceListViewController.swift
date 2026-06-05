@@ -1,29 +1,27 @@
 //
-//  SampleListViewController.swift
+//  InterfaceListViewController.swift
 //  CoreBluetoothPlayground
 //
 
 import UIKit
 
-// MARK: - Sample
+// MARK: - Interface
 
-struct Sample {
-    let number: String
-    let title: String
+struct Interface {
+    let symbol: String
     let make: () -> UIViewController
 }
 
-// MARK: - SampleListViewController
+// MARK: - InterfaceListViewController
 
-final class SampleListViewController: UITableViewController {
+final class InterfaceListViewController: UITableViewController {
 
     // MARK: Properties
 
-    private let samples: [Sample] = [
-        Sample(
-            number: "01",
-            title: "Central Scan",
-            make: { CentralScanViewController() }
+    private let interfaces: [Interface] = [
+        Interface(
+            symbol: "CBCentralManager",
+            make: { CBCentralManagerViewController() }
         ),
     ]
 
@@ -31,21 +29,21 @@ final class SampleListViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Core Bluetooth Playground"
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "SampleCell")
+        title = "Core Bluetooth Interfaces"
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "InterfaceCell")
     }
 
     // MARK: UITableViewDataSource
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        samples.count
+        interfaces.count
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "SampleCell", for: indexPath)
-        let sample = samples[indexPath.row]
+        let cell = tableView.dequeueReusableCell(withIdentifier: "InterfaceCell", for: indexPath)
+        let interface = interfaces[indexPath.row]
         var config = cell.defaultContentConfiguration()
-        config.text = "\(sample.number) \(sample.title)"
+        config.text = interface.symbol
         cell.contentConfiguration = config
         cell.accessoryType = .disclosureIndicator
         return cell
@@ -55,7 +53,7 @@ final class SampleListViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let sample = samples[indexPath.row]
-        navigationController?.pushViewController(sample.make(), animated: true)
+        let interface = interfaces[indexPath.row]
+        navigationController?.pushViewController(interface.make(), animated: true)
     }
 }
