@@ -91,3 +91,13 @@
 **理由:** Core Bluetooth はプロプライエタリで内部が見えず、各インターフェースの振る舞いを単位で観察したいから。View はインターフェース単位・実装は共通の二層とし、接続等の土台は共有セッション層 `Shared/BLESession` に集約する。これにより「あるクラスの挙動を見たいとき対応するサンプルが一意に定まる」状態を維持できる。
 
 **影響:** `Samples/01_CentralScan/` → `Samples/CBCentralManager/`、`SampleListViewController` → `InterfaceListViewController`、`struct Sample` → `struct Interface`（フィールドは `symbol: String` と `make: () -> UIViewController`）、画面タイトルは「Core Bluetooth Interfaces」に変更。`docs/interface-mapping.md` は全インターフェース網羅トラッカーに更新。共有セッション層 `BLESession` は CBPeripheral 増分で初めて導入（今回は対象外）。
+
+---
+
+### D-011: deploymentTarget と SWIFT_VERSION を最新に固定する
+
+**決定:** `ios/project.yml` の deploymentTarget を iOS 26.0、SWIFT_VERSION を 6.0（Swift 6 言語モード）に更新する。
+
+**理由:** 本リポジトリは個人の総復習用であり、対象は最新の iOS 実機・Xcode（26 系）。最新の言語モードで Core Bluetooth の挙動を確認したい。Swift 6 の strict concurrency は将来の並行性バグを早期に検出する利点もある。
+
+**影響:** Swift 6 言語モードでは非 Sendable な `CBUUID` の `static let` 定数が concurrency-safe でないと判定される。`Shared/BLEConstants` の各 UUID 定数に `nonisolated(unsafe)` を付与した。CBUUID は実質不変であり、Apple の診断が示す定石の対応である。CI は macos-15 + 最新安定 Xcode（iOS 26 SDK / Swift 6）で build・test とも green を確認済み。
