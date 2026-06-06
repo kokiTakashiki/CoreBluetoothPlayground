@@ -114,10 +114,10 @@
 
 ---
 
-### D-013: メニュー項目は `InterfaceModule` プロトコルで表す（`struct Interface` を廃止）
+### D-013: メニュー項目は `Topic` プロトコルで表す（`struct Interface` を廃止）
 
-**決定:** app shell の一覧メニューが持つ「行」を、クロージャ詰めの値型 `struct Interface { symbol; make }` ではなく、`CBPlaygroundCore` の `protocol InterfaceModule`（`static var symbol` / `static func makeViewController()`）で表す。各モジュールの Router がこれに準拠し、app shell は `[any InterfaceModule.Type]` を並べるだけにする。D-010 で導入した `struct Interface` はこれに置き換える。
+**決定:** app shell の一覧メニューが持つ「行」を、クロージャ詰めの値型 `struct Interface { symbol; make }` ではなく、`CBPlaygroundCore` の `protocol Topic`（`static var title` / `static func makeViewController()`）で表す。各モジュールの Router がこれに準拠し、app shell は `[any Topic.Type]` を並べるだけにする。D-010 で導入した `struct Interface` はこれに置き換える。
 
-**理由:** Swift で "Interface" という値型名は protocol の概念と衝突して紛らわしく、中身（表示名＋生成クロージャ）が名前に伴わない割れ窓だった。protocol にすると表示名と生成口が各モジュール側（単一の真実）に移り、app shell からメタ情報のハードコードが消え、VIPER のモジュール境界とも筋が通る。
+**理由:** Swift で "Interface" という型名は protocol／UI／一般語と衝突して紛らわしく、中身（表示名＋生成クロージャ）が名前に伴わない割れ窓だった。型名から "Interface" を退け（概念語としての「インターフェース」は docs に残す）、各クラスを 1 つの「トピック」として表す `Topic` プロトコルにする。表示名と生成口が各モジュール側（単一の真実）に移り、app shell からメタ情報のハードコードが消え、VIPER のモジュール境界とも筋が通る。
 
-**影響:** `CBPlaygroundCore` に `InterfaceModule.swift` を追加。`CBCentralManagerRouter` を `InterfaceModule` に準拠（`symbol` / `makeViewController()`）。`InterfaceListViewController` は `struct Interface` を廃し `private let modules: [any InterfaceModule.Type]` を持つ。app target に `CBPlaygroundCore` 依存を明示追加。
+**影響:** `CBPlaygroundCore` に `Topic.swift` を追加。`CBCentralManagerRouter` を `Topic` に準拠（`title` / `makeViewController()`）。一覧画面は `InterfaceListViewController` → `TopicListViewController` に改名し、`struct Interface` を廃して `private let topics: [any Topic.Type]` を持つ。画面タイトルは "Core Bluetooth Topics"。app target に `CBPlaygroundCore` 依存を明示追加。

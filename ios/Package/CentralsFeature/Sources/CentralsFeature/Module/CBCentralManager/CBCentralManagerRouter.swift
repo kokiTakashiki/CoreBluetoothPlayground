@@ -36,11 +36,11 @@ public final class CBCentralManagerRouter: CBCentralManagerRouterInput {
     }
 }
 
-// MARK: - InterfaceModule
+// MARK: - Topic
 
-extension CBCentralManagerRouter: InterfaceModule {
+extension CBCentralManagerRouter: Topic {
 
-    public static var symbol: String {
+    public static var title: String {
         "CBCentralManager"
     }
 
