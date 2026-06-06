@@ -114,10 +114,12 @@
 
 ---
 
-### D-013: メニュー項目は `Topic` プロトコルで表す（`struct Interface` を廃止）
+### D-013: メニュー項目は値型 `struct Topic` で表す（`struct Interface` を改名）
 
-**決定:** app shell の一覧メニューが持つ「行」を、クロージャ詰めの値型 `struct Interface { symbol; make }` ではなく、`CBPlaygroundCore` の `protocol Topic`（`static var title` / `static func makeViewController()`）で表す。各モジュールの Router がこれに準拠し、app shell は `[any Topic.Type]` を並べるだけにする。D-010 で導入した `struct Interface` はこれに置き換える。
+**決定:** app shell の一覧メニューが持つ「行」を、`CBPlaygroundCore` の値型 `struct Topic { title: String; makeViewController: () -> UIViewController }` で表す。app shell は `[Topic]` を組み立てて並べる。D-010 で導入した `struct Interface` はこの `Topic` に改名・整理する。
 
-**理由:** Swift で "Interface" という型名は protocol／UI／一般語と衝突して紛らわしく、中身（表示名＋生成クロージャ）が名前に伴わない割れ窓だった。型名から "Interface" を退け（概念語としての「インターフェース」は docs に残す）、各クラスを 1 つの「トピック」として表す `Topic` プロトコルにする。表示名と生成口が各モジュール側（単一の真実）に移り、app shell からメタ情報のハードコードが消え、VIPER のモジュール境界とも筋が通る。
+**理由:** 割れ窓の正体は「struct であること」ではなく「`Interface` という型名」だった。"Interface" は protocol／UI／一般語と衝突して紛らわしい。メニューの 1 行は「表示名＋生成ファクトリ」というデータに過ぎず、実装ごとに振る舞いが多態的に変わるわけではないため、値型（struct）で表すのが適切。protocol が活きるのは振る舞いの多態がある時で、ここでは over-engineering になる。したがって**名前だけ直し（→ `Topic`）、struct は維持**する。
 
-**影響:** `CBPlaygroundCore` に `Topic.swift` を追加。`CBCentralManagerRouter` を `Topic` に準拠（`title` / `makeViewController()`）。一覧画面は `InterfaceListViewController` → `TopicListViewController` に改名し、`struct Interface` を廃して `private let topics: [any Topic.Type]` を持つ。画面タイトルは "Core Bluetooth Topics"。app target に `CBPlaygroundCore` 依存を明示追加。
+**経緯（補足）:** 一旦 `protocol Topic` + Router 準拠（`[any Topic.Type]`）に変えたが、これは "Interface=protocol" という名前由来の誤解に引きずられた回り道であり、struct へ戻した。
+
+**影響:** `CBPlaygroundCore` に `Topic.swift`（struct）を置く。`CBCentralManagerRouter` は protocol 準拠を持たず `assemble()` のみ。一覧画面は `InterfaceListViewController` → `TopicListViewController` に改名し、`private let topics: [Topic]`（`Topic(title:makeViewController:)` で各行を生成）を持つ。画面タイトルは "Core Bluetooth Topics"。app target は `Topic` 利用のため `CBPlaygroundCore` 依存を持つ。

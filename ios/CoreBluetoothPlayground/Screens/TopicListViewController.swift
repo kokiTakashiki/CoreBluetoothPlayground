@@ -14,9 +14,9 @@ final class TopicListViewController: UITableViewController {
     // MARK: Properties
 
     /// メニューに並べる Core Bluetooth トピック（各クラス）。
-    /// 各モジュールが `Topic` に準拠し、表示名と画面生成を自分で持つ。
-    private let topics: [any Topic.Type] = [
-        CBCentralManagerRouter.self,
+    /// 各行は表示名と画面生成ファクトリを持つだけの値（`Topic`）。
+    private let topics: [Topic] = [
+        Topic(title: "CBCentralManager", makeViewController: { CBCentralManagerRouter.assemble() }),
     ]
 
     // MARK: Overridden Functions
