@@ -9,7 +9,8 @@ let package = Package(
         .library(name: "CBPlaygroundCore", targets: ["CBPlaygroundCore"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/kean/Pulse", exact: "5.2.2"),
+        // サプライチェーン対策でタグではなくコミット SHA で固定する（D-008 と同方針）。
+        .package(url: "https://github.com/kean/Pulse", revision: "a4e5bc2b0439552d4ff5fc9667c389be6ef5bd52"), // 5.2.2
     ],
     targets: [
         .target(

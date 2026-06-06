@@ -64,11 +64,13 @@
 
 ---
 
-### D-008: GitHub Actions のサードパーティ Action はコミット SHA で固定する
+### D-008: サードパーティ依存はコミット SHA で固定する（GitHub Actions と SwiftPM）
 
-**決定:** `.github/workflows/` で参照するサードパーティ Action は、`@v4` のようなミュータブルなタグではなく**フルコミット SHA**で固定し、バージョンをコメント併記する。例: `actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1`。
+**決定:** 外部から取り込む依存は、ミュータブルなタグではなく**フルコミット SHA**で固定し、バージョンをコメント併記する。
+- GitHub Actions: 例 `actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1`。
+- SwiftPM リモート依存: `.package(url:, exact:)` ではなく `.package(url:, revision: "<sha>") // <version>` を使う。例 `.package(url: "https://github.com/kean/Pulse", revision: "a4e5bc2b0439552d4ff5fc9667c389be6ef5bd52") // 5.2.2`（RoofWallPainterEdit も同方式）。
 
-**理由:** タグは上書き可能なため、タグ参照ではサプライチェーン攻撃（侵害された Action が同一タグで再配信される）を防げない。SHA は不変であり、レビュー済みの正確なコードに固定できる。
+**理由:** タグは上書き可能なため、タグ参照ではサプライチェーン攻撃（侵害された成果物が同一タグで再配信される）を防げない。SHA は不変であり、レビュー済みの正確なコードに固定できる。
 
 **運用:** 更新時は新バージョンの SHA を一次情報（公式リポジトリの `git ls-remote`）で解決し、コメントのバージョン表記も合わせて更新する。
 
