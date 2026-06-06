@@ -27,6 +27,7 @@ targets:
       - path: CoreBluetoothPlayground
     dependencies:
       - package: CentralsFeature
+      - package: CBPlaygroundCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.CoreBluetoothPlayground

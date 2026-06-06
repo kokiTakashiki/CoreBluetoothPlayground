@@ -111,3 +111,13 @@
 **理由:** プロジェクトが大きくなる前提で依存を機能境界で分離し、Interactor が必要な範囲だけ公開・Presenter が表示 VM を作る形にして UI 結合 DTO を排する。`DiscoveredPeripheral`（名前・RSSI・広告データを UI 向けに整形した DTO）は Interactor に保持すべき情報を View 結合で束ねており、VIPER では Interactor が生の `Discovery` Entity を公開し、Presenter が `DeviceRow`（表示 VM）を組み立てる形にする。
 
 **影響:** `ios/Package/CBPlaygroundCore`・`ios/Package/CentralsFeature` 新設。`BLEConstants` は `CBPlaygroundCore` へ移動（`public enum BLEConstants`）。`Discovery`（生データ Entity）を `CBPlaygroundCore` に追加。`CentralsFeature` に CBCentralManager VIPER 一式（InteractorInput / Presenter / ViewController / Router）と具象 Interactor `CBCentralScanInteractor` を配置。app shell（`InterfaceListViewController`）は `import CentralsFeature` し `CBCentralManagerRouter.assemble()` を呼ぶ。旧 `Samples/CBCentralManager/`・`Shared/BLEConstants.swift` を削除。`project.yml` に `packages:` セクション追加と app target に `CentralsFeature` 依存を追加。
+
+---
+
+### D-013: メニュー項目は `InterfaceModule` プロトコルで表す（`struct Interface` を廃止）
+
+**決定:** app shell の一覧メニューが持つ「行」を、クロージャ詰めの値型 `struct Interface { symbol; make }` ではなく、`CBPlaygroundCore` の `protocol InterfaceModule`（`static var symbol` / `static func makeViewController()`）で表す。各モジュールの Router がこれに準拠し、app shell は `[any InterfaceModule.Type]` を並べるだけにする。D-010 で導入した `struct Interface` はこれに置き換える。
+
+**理由:** Swift で "Interface" という値型名は protocol の概念と衝突して紛らわしく、中身（表示名＋生成クロージャ）が名前に伴わない割れ窓だった。protocol にすると表示名と生成口が各モジュール側（単一の真実）に移り、app shell からメタ情報のハードコードが消え、VIPER のモジュール境界とも筋が通る。
+
+**影響:** `CBPlaygroundCore` に `InterfaceModule.swift` を追加。`CBCentralManagerRouter` を `InterfaceModule` に準拠（`symbol` / `makeViewController()`）。`InterfaceListViewController` は `struct Interface` を廃し `private let modules: [any InterfaceModule.Type]` を持つ。app target に `CBPlaygroundCore` 依存を明示追加。

@@ -3,6 +3,7 @@
 //  CentralsFeature
 //
 
+import CBPlaygroundCore
 import UIKit
 
 // MARK: - CBCentralManagerRouterInput
@@ -32,5 +33,18 @@ public final class CBCentralManagerRouter: CBCentralManagerRouterInput {
         viewController.presenter = presenter
         presenter.view = viewController
         return viewController
+    }
+}
+
+// MARK: - InterfaceModule
+
+extension CBCentralManagerRouter: InterfaceModule {
+
+    public static var symbol: String {
+        "CBCentralManager"
+    }
+
+    public static func makeViewController() -> UIViewController {
+        assemble()
     }
 }

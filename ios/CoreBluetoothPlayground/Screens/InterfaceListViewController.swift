@@ -3,15 +3,9 @@
 //  CoreBluetoothPlayground
 //
 
+import CBPlaygroundCore
 import CentralsFeature
 import UIKit
-
-// MARK: - Interface
-
-struct Interface {
-    let symbol: String
-    let make: () -> UIViewController
-}
 
 // MARK: - InterfaceListViewController
 
@@ -19,11 +13,10 @@ final class InterfaceListViewController: UITableViewController {
 
     // MARK: Properties
 
-    private let interfaces: [Interface] = [
-        Interface(
-            symbol: "CBCentralManager",
-            make: { CBCentralManagerRouter.assemble() }
-        ),
+    /// メニューに並べる Core Bluetooth インターフェースのモジュール。
+    /// 各モジュールが `InterfaceModule` に準拠し、表示名と画面生成を自分で持つ。
+    private let modules: [any InterfaceModule.Type] = [
+        CBCentralManagerRouter.self,
     ]
 
     // MARK: Overridden Functions
@@ -37,14 +30,13 @@ final class InterfaceListViewController: UITableViewController {
     // MARK: UITableViewDataSource
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        interfaces.count
+        modules.count
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "InterfaceCell", for: indexPath)
-        let interface = interfaces[indexPath.row]
         var config = cell.defaultContentConfiguration()
-        config.text = interface.symbol
+        config.text = modules[indexPath.row].symbol
         cell.contentConfiguration = config
         cell.accessoryType = .disclosureIndicator
         return cell
@@ -54,7 +46,6 @@ final class InterfaceListViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let interface = interfaces[indexPath.row]
-        navigationController?.pushViewController(interface.make(), animated: true)
+        navigationController?.pushViewController(modules[indexPath.row].makeViewController(), animated: true)
     }
 }
