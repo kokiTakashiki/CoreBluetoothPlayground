@@ -114,12 +114,12 @@
 
 ---
 
-### D-013: メニュー項目は値型 `struct Topic` で表す（`struct Interface` を改名）
+### D-013: メニュー項目は純データ `enum Topic` で表す（`struct Interface` を改名・整理）
 
-**決定:** app shell の一覧メニューが持つ「行」を、`CBPlaygroundCore` の値型 `struct Topic { title: String; makeViewController: () -> UIViewController }` で表す。app shell は `[Topic]` を組み立てて並べる。D-010 で導入した `struct Interface` はこの `Topic` に改名・整理する。
+**決定:** app shell の一覧メニューの「行」を、app shell ローカルの純データ `enum Topic: CaseIterable`（`title` だけを持つ）で表す。画面生成は各 Router の責務とし、`TopicListViewController.didSelectRowAt` の `switch` で `CBCentralManagerRouter.assemble()` を**明示的に**呼ぶ。D-010 で導入した `struct Interface` はこの `Topic` に置き換える。
 
-**理由:** 割れ窓の正体は「struct であること」ではなく「`Interface` という型名」だった。"Interface" は protocol／UI／一般語と衝突して紛らわしい。メニューの 1 行は「表示名＋生成ファクトリ」というデータに過ぎず、実装ごとに振る舞いが多態的に変わるわけではないため、値型（struct）で表すのが適切。protocol が活きるのは振る舞いの多態がある時で、ここでは over-engineering になる。したがって**名前だけ直し（→ `Topic`）、struct は維持**する。
+**理由:** 割れ窓の正体は「struct であること」ではなく「`Interface` という型名」だった（"Interface" は protocol／UI／一般語と衝突）。さらに、メニュー行に VC 生成ファクトリ（クロージャ）を持たせると「Topic が画面を生成できる」という責務の混線が起き、`@MainActor () -> UIViewController` を struct に格納する奇抜なスタイルにもなる。そこで **Topic は純データ（どのトピックか＋表示名）に徹し**、画面生成は呼び出し側で `Router.assemble()` を明示する形にした。可読性が高く、将来 Topic の扱いに迷わない。`enum` + `CaseIterable` によりトピック追加は case を足すだけで、遷移先の網羅を `switch` がコンパイル時に強制する。
 
-**経緯（補足）:** 一旦 `protocol Topic` + Router 準拠（`[any Topic.Type]`）に変えたが、これは "Interface=protocol" という名前由来の誤解に引きずられた回り道であり、struct へ戻した。
+**経緯（補足）:** `struct Interface`（クロージャ詰め）→ `protocol Topic`（"Interface=protocol" の名前由来の誤解）→ `struct Topic`（クロージャ格納が奇抜）と回り道したのち、最終的に「VC 生成を持たない純データ enum + Router.assemble() 明示呼び出し」へ収束した。
 
-**影響:** `CBPlaygroundCore` に `Topic.swift`（struct）を置く。`CBCentralManagerRouter` は protocol 準拠を持たず `assemble()` のみ。一覧画面は `InterfaceListViewController` → `TopicListViewController` に改名し、`private let topics: [Topic]`（`Topic(title:makeViewController:)` で各行を生成）を持つ。画面タイトルは "Core Bluetooth Topics"。app target は `Topic` 利用のため `CBPlaygroundCore` 依存を持つ。
+**影響:** `CBPlaygroundCore` の `Topic.swift` は削除（Core には置かない）。`enum Topic` は app shell の `TopicListViewController.swift` に internal で置く。`CBCentralManagerRouter` は `assemble()` のみ（protocol 準拠なし）。一覧画面は `InterfaceListViewController` → `TopicListViewController` に改名、画面タイトルは "Core Bluetooth Topics"。app target の `CBPlaygroundCore` 依存は外す（app shell は Router のため `CentralsFeature` だけ参照。テストターゲットは BLEConstants 検証で `CBPlaygroundCore` 依存を維持）。将来 Feature 側がトピックを自前公開する形にするなら、その時に共有型を再導入する。

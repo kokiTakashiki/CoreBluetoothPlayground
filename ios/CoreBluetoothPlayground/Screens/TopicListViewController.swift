@@ -3,9 +3,26 @@
 //  CoreBluetoothPlayground
 //
 
-import CBPlaygroundCore
 import CentralsFeature
 import UIKit
+
+// MARK: - Topic
+
+/// 一覧メニューに並ぶ Core Bluetooth トピック（各クラス）の識別。
+/// 表示名だけを持つ純粋なデータで、画面生成は持たない（生成は各 Router の責務）。
+/// トピックを増やすときは case を足すだけでよく、遷移先の網羅は `didSelectRowAt` の switch でコンパイラが強制する。
+enum Topic: CaseIterable {
+
+    case cbCentralManager
+
+    // MARK: Computed Properties
+
+    var title: String {
+        switch self {
+        case .cbCentralManager: "CBCentralManager"
+        }
+    }
+}
 
 // MARK: - TopicListViewController
 
@@ -13,11 +30,7 @@ final class TopicListViewController: UITableViewController {
 
     // MARK: Properties
 
-    /// メニューに並べる Core Bluetooth トピック（各クラス）。
-    /// 各行は表示名と画面生成ファクトリを持つだけの値（`Topic`）。
-    private let topics: [Topic] = [
-        Topic(title: "CBCentralManager", makeViewController: { CBCentralManagerRouter.assemble() }),
-    ]
+    private let topics = Topic.allCases
 
     // MARK: Overridden Functions
 
@@ -46,6 +59,11 @@ final class TopicListViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        navigationController?.pushViewController(topics[indexPath.row].makeViewController(), animated: true)
+        // 画面生成は各 Router の責務。ここでは Router.assemble() を明示的に呼ぶ。
+        let viewController: UIViewController =
+            switch topics[indexPath.row] {
+            case .cbCentralManager: CBCentralManagerRouter.assemble()
+            }
+        navigationController?.pushViewController(viewController, animated: true)
     }
 }
