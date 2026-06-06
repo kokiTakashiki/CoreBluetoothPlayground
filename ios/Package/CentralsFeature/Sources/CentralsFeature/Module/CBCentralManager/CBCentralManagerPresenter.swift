@@ -113,7 +113,7 @@ final class CBCentralManagerPresenter: CBCentralManagerPresenterInput {
     }
 
     private func makeRows() -> [DeviceRow] {
-        interactor.discoveries.map { discovery in
+        interactor.discoveries().map { discovery in
             DeviceRow(
                 name: discovery.peripheral.name ?? "(no name)",
                 rssi: "RSSI: \(discovery.rssi)",

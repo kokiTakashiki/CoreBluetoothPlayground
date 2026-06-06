@@ -16,8 +16,10 @@ protocol CBCentralManagerInteractorInput: AnyObject {
     /// CBCentralManager の現在の状態を返す。Interactor は状態を保持せず、その都度問い合わせて返す。
     func cbState() -> CBManagerState
 
-    /// スキャン中に発見した Discovery の一覧（identifier で重複排除済み）
-    var discoveries: [Discovery] { get }
+    /// スキャン中に発見した Discovery の一覧（identifier で重複排除済み）を返す。
+    /// CBCentralManager は一覧を保持しないため Interactor が蓄積するが、その配列は private とし、
+    /// 公開はこのクエリ関数で行う（保持を外へ晒さない）。
+    func discoveries() -> [Discovery]
 
     /// discoveries / state 変化通知
     var onChange: (() -> Void)? { get set }

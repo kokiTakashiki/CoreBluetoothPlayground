@@ -15,9 +15,12 @@ final class CBCentralScanInteractor: NSObject {
 
     // MARK: Properties
 
-    private(set) var discoveries: [Discovery] = []
     var onChange: (() -> Void)?
     var onLog: ((String) -> Void)?
+
+    /// 発見結果の蓄積。CBCentralManager は一覧を保持しないため Interactor が持つが、完全に private とし
+    /// 公開は `discoveries()` 経由のみとする。
+    private var discovered: [Discovery] = []
 
     private var centralManager: CBCentralManager!
 
@@ -37,6 +40,11 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
         centralManager.state
     }
 
+    /// 蓄積した発見結果を返す（内部配列は private、公開はこの関数のみ）。
+    func discoveries() -> [Discovery] {
+        discovered
+    }
+
     func startScan(filterNUS: Bool, allowDuplicates: Bool) {
         guard centralManager.state == .poweredOn
         else {
@@ -45,7 +53,7 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
             return
         }
 
-        discoveries = []
+        discovered = []
         onChange?()
 
         let serviceUUIDs: [CBUUID]? = filterNUS ? [BLEConstants.nusService] : nil
@@ -63,7 +71,7 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
             return
         }
         centralManager.stopScan()
-        log("⏹ スキャン停止 (発見数: \(discoveries.count))")
+        log("⏹ スキャン停止 (発見数: \(discovered.count))")
     }
 
     // MARK: Private
@@ -110,12 +118,12 @@ extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
         let name = peripheral.name ?? "(no name)"
         let idPrefix = peripheral.identifier.uuidString.prefix(8)
 
-        if let index = discoveries.firstIndex(where: { $0.peripheral.identifier == peripheral.identifier }) {
-            discoveries[index] = discovery
+        if let index = discovered.firstIndex(where: { $0.peripheral.identifier == peripheral.identifier }) {
+            discovered[index] = discovery
             log("↻ 更新: \(name) [\(idPrefix)…] RSSI=\(RSSI)")
         }
         else {
-            discoveries.append(discovery)
+            discovered.append(discovery)
             log("✚ 発見: \(name) [\(idPrefix)…] RSSI=\(RSSI)")
         }
         onChange?()
