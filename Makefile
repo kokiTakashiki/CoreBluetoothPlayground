@@ -94,8 +94,8 @@ collect: ## Xcode ログと pcap を captures/ へタイムスタンプ付きで
 
 list-samples: ## 実装済みサンプルを一覧表示する
 	@echo "実装済みサンプル:"
-	@ls -d $(IOS_DIR)/CoreBluetoothPlayground/Samples/*/  2>/dev/null | \
-		xargs -I{} basename {} | \
+	@find $(IOS_DIR)/Package -type d -path "*/Module/*" 2>/dev/null | \
+		xargs -I{} basename {} | sort | \
 		awk '{printf "  %s\n", $$0}' || echo "  (サンプルなし)"
 
 clean: ## ビルド成果物を削除する（ソース・ツールには触れない）

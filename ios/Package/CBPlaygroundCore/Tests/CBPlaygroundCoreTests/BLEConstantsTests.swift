@@ -1,15 +1,16 @@
 //
-//  CBCentralManagerModelTests.swift
-//  CoreBluetoothPlaygroundTests
+//  BLEConstantsTests.swift
+//  CBPlaygroundCoreTests
 //
 
 import CBPlaygroundCore
 import XCTest
 
-final class CBCentralManagerModelTests: XCTestCase {
+@MainActor
+final class BLEConstantsTests: XCTestCase {
 
     func testNUSServiceUUID() {
-        // Nordic UART Service の UUID が仕様どおりであること（CBPlaygroundCore 公開 API のスモーク）
+        // Nordic UART Service の UUID が仕様どおりであること
         XCTAssertEqual(
             BLEConstants.nusService.uuidString.uppercased(),
             "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"

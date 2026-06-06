@@ -24,6 +24,7 @@
 | 付録 D | テンプレートの扱い（フィージビリティ実測済み） |
 | 付録 E | firmware 環境（サブモジュール委譲） |
 | 付録 F | リポジトリ構造 |
+| 付録 G | VIPER + SwiftPM の参照（RoofWallPainterEdit） |
 
 ---
 
@@ -56,41 +57,38 @@ graph LR
 
 ## 2. iOS サンプルアプリの構造
 
-本リポジトリは単一アプリにインターフェース一覧メニューを持たせる。署名とビルドが一度で済み、実機で即座に試せる。各サンプルは Core Bluetooth の 1 クラスにフォーカスし、`Samples/CBCentralManager/` のようにクラス名のディレクトリへ閉じる。クラスを単独実行できない事情は 1 章のとおりで、スキャン→接続→探索の土台は共有セッション層 `Shared/BLESession` に集約し、各サンプルはその上に自分のクラスのレンズだけを載せる。共有セッション層は使う時に導入する方針に従い、接続が初めて要る CBPeripheral の増分で入れる。CBCentralManager のスキャンだけなら要らない。
+本リポジトリは、アプリ本体（app shell）と機能別 SwiftPM パッケージの組み合わせで構成する。app shell はインターフェース一覧メニュー（`InterfaceListViewController`）と起動処理だけを持ち、各機能パッケージへ依存する。パッケージは Apple ドキュメントのカテゴリ単位（Centrals / Peripherals / Services / Supporting / Errors）に切り、加えてスキャン→接続→探索の土台と `BLEConstants` を持つ共有コアパッケージ `CBPlaygroundCore` を置く。署名とビルドは app shell で一度に済み、実機で即座に試せる。
 
-iOS アプリの内部は、起動時に Core Bluetooth インターフェースの一覧メニューを表示し、行を選ぶと対応するクラスの専用画面へ遷移する。各画面は当該クラスのレンズであるモデルと画面を持ち、土台は共有セッション層に委ねる。一覧には文書化された全インターフェースを並べる。各画面での扱い、すなわち操作して検証するか説明に留めるかは 2.1 に定める。メニュー遷移の代表例を次に示す。
+各サンプルは Core Bluetooth の 1 クラスにフォーカスする。**複雑な操作画面（状態遷移や画面遷移が多いもの）は VIPER（View / Presenter / Interactor / Router）で組み、単純な操作画面や「説明に留める」画面は軽量（プレーンな ViewController）にする**。VIPER と SwiftPM の流儀は `koki-mobile-studio/RoofWallPainter` の `Package/RoofWallPainterEdit` を範とする（付録 G）。クラスを単独実行できない事情（接続・探索が前提）は 1 章のとおりで、土台は `CBPlaygroundCore` の `BLESession` に集約し、各画面の Interactor がそこから必要な範囲だけを公開し、Presenter が表示用に取り出す。
+
+app shell から各機能パッケージへの導線を次に示す。メニューの各行は、対応するモジュールの `Router.assemble(...)` を呼んで得た ViewController へ遷移する。
 
 ```mermaid
 graph TD
-    LIST["InterfaceListViewController<br/>(rootViewController)"]
-    LIST -->|push| S1["CBCentralManager"]
-    LIST -->|push| S2["CBPeripheral"]
-    LIST -->|push| S3["CBCharacteristic"]
-    LIST -->|push| S4["CBDescriptor"]
-    LIST -->|push| S5["CBPeripheralManager"]
-
-    S1 --> SH["Shared/<br/>BLESession・BLEConstants"]
-    S2 --> SH
-    S3 --> SH
-    S4 --> SH
-    S5 --> SH
+    APP["app shell<br/>InterfaceListViewController"]
+    APP -->|"Router.assemble()"| M1["CentralsFeature<br/>CBCentralManager …"]
+    APP -->|"Router.assemble()"| M2["PeripheralsFeature<br/>CBPeripheralManager …"]
+    APP -->|"Router.assemble()"| M3["ServicesFeature / SupportingFeature / ErrorsFeature"]
+    M1 --> CORE["CBPlaygroundCore<br/>BLESession・BLEConstants"]
+    M2 --> CORE
+    M3 --> CORE
 ```
 
-1 つのサンプルの層構成を次に示す。画面層とモデル層は当該インターフェースに閉じ、スキャン→接続→探索の土台は共有セッション層に集約する。これが「View はインターフェース単位・実装は共通」の二層構造である。点線は「参照のみ」を表す。
+複雑画面 1 つは VIPER モジュールとして次の層構成を採る。View はユーザー操作を Presenter へ送り、Presenter が状態遷移を決めて Interactor（取得・変更）と Router（遷移）へ振り分ける。Interactor は `CBPlaygroundCore` の `BLESession` を使い、「そのモジュールが必要とする範囲だけ」を `InteractorInput` プロトコルで公開する。全層 `@MainActor`。
 
 ```mermaid
 graph TD
-    subgraph "1 サンプル = 1 インターフェース（CBXxx にフォーカス）"
-        V["画面層: CBXxxViewController<br/>UI 表示・ユーザー操作"]
-        M["モデル層: CBXxxModel<br/>当該クラスのレンズ"]
-        V -->|"操作を依頼し状態を受け取る"| M
+    subgraph "複雑画面 = VIPER モジュール（CBXxx）"
+        V["View: CBXxxViewController<br/>(+ CBXxxViewInput)"]
+        P["Presenter: CBXxxPresenter<br/>(+ CBXxxPresenterInput・状態を保持)"]
+        I["Interactor 境界: CBXxxInteractorInput<br/>(必要な範囲だけ)"]
+        R["Router: CBXxxRouter<br/>(assemble・画面遷移)"]
+        V -->|"操作イベント"| P
+        P -->|"取得・変更"| I
+        P -->|"遷移依頼"| R
     end
-    SESS["共有セッション層: Shared/BLESession<br/>スキャン→接続→探索の土台（CBPeripheral 増分で導入）"]
-    SH2["共有定数: Shared/BLEConstants<br/>NUS の UUID など"]
-    CB["システム: CoreBluetooth.framework"]
-    M -->|"土台を利用"| SESS
-    SESS -->|"API 呼び出し"| CB
-    M -.->|"UUID を参照"| SH2
+    I -->|"利用"| CORE2["CBPlaygroundCore<br/>BLESession・BLEConstants"]
+    CORE2 -->|"API 呼び出し"| CB["CoreBluetooth.framework"]
 ```
 
 ### 2.1 全インターフェース一覧と画面での扱い
@@ -125,7 +123,32 @@ graph TD
 | Errors | `CBATTErrorDomain` | 説明 | 定数。ATT エラー分類での役割を明記 |
 | Variables | `CBUUIDCharacteristicObservationScheduleString` | 説明 | 定数 UUID。意味を明記し、対応記述子を持つ FW があれば操作観察へ拡張 |
 
-「操作」は実機での操作と観察で検証し、「説明」は操作対象を持たないため画面上の解説に留める。いずれも専用画面を持ち、全インターフェースが一覧から到達できる。
+「操作」は実機での操作と観察で検証し、「説明」は操作対象を持たないため画面上の解説に留める。いずれも専用画面を持ち、全インターフェースが一覧から到達できる。複雑な「操作」画面は次節の VIPER モジュールとし、単純な「操作」画面と「説明」画面は軽量な ViewController とする。
+
+### 2.2 モジュール構成（SwiftPM + VIPER）
+
+機能パッケージは Apple カテゴリ単位で切り、各パッケージは `CBPlaygroundCore` に依存する。パッケージは `swift-tools 6.0` / `platforms: [.iOS("26.0")]` / `defaultLocalization: ja` とし、兄弟依存は `.package(path:)` で張る（`RoofWallPainterEdit` 準拠）。
+
+```
+Package/
+  CBPlaygroundCore/           共有: BLESession・BLEConstants・Entity
+  CentralsFeature/            Centrals カテゴリ
+  PeripheralsFeature/         Peripherals カテゴリ
+  ServicesFeature/            Services カテゴリ
+  SupportingFeature/          Supporting カテゴリ
+  ErrorsFeature/              Errors カテゴリ
+```
+
+複雑画面は 1 モジュール = 1 ディレクトリ `Sources/<Feature>/Module/<CBクラス>/` に VIPER 一式を置く。ファイル名と役割は次のとおり。単純・説明画面は `ViewController` だけを置く。
+
+| ファイル | 役割 |
+| --- | --- |
+| `CBXxxViewController.swift` | View。`CBXxxViewInput` に準拠し、操作イベントを Presenter へ送る。UIKit 状態を抱える。 |
+| `CBXxxPresenter.swift` | `CBXxxPresenterInput` と `CBXxxPresenter`。状態遷移を保持し、Interactor / Router へ振り分ける。表示用 VM をここで組む。 |
+| `CBXxxInteractorInput.swift` | そのモジュールが Interactor に要求する範囲だけを切り出した境界プロトコル。 |
+| `CBXxxRouter.swift` | `CBXxxRouterInput` と `public CBXxxRouter`。`static assemble(...)` で View+Presenter+Router を組み上げ ViewController を返す。app shell はこれを呼ぶ。 |
+
+Interactor の具象（`CBPlaygroundCore` の `BLESession` を使う）はパッケージ共通の `Sources/<Feature>/Interactor/` に置き、複数モジュールが各自の `InteractorInput` 越しに共有できる。これにより、スキャン結果のような情報は **Interactor が `InteractorInput` で公開し、Presenter が必要な時に取り出して表示 VM を作る**。UI 結合の DTO（旧 `DiscoveredPeripheral`）は持たない。生の `CBPeripheral` と `advertisementData` を観察したい場合も、Interactor が公開し Presenter／View で整形する。
 
 ---
 
@@ -261,7 +284,7 @@ CI で実行できない範囲を明示する。firmware のビルド・実機�
 
 ```mermaid
 graph LR
-    F["土台 + CBCentralManager<br/>scaffolding/Makefile/CI/メニュー<br/>【規約を固定・実装済】"]
+    F["土台 + CBCentralManager<br/>scaffolding/Makefile/CI/メニュー<br/>+ SwiftPM 化 + 初 VIPER<br/>【規約を固定】"]
     P["CBPeripheral<br/>(+ 共有 BLESession 導入)"]
     C["CBCharacteristic<br/>(暗号化/CBATTError も観察)"]
     D["CBDescriptor"]
@@ -275,7 +298,7 @@ graph LR
 
 | 増分 | フォーカス | 主な成果物 / 観察する振る舞い | 機械検証 |
 | --- | --- | --- | --- |
-| 土台 + `CBCentralManager` | CBCentralManager | scaffolding / Makefile 全面 / CI / インターフェース一覧メニュー / `Shared/BLEConstants`。状態(CBManagerState)・スキャン・CBAdvertisementData・接続/切断を観察 | build/test/lint/parse/idempotency green |
+| 土台 + `CBCentralManager` | CBCentralManager | scaffolding / Makefile 全面 / CI / app shell とメニュー / SwiftPM 機能パッケージと `CBPlaygroundCore` の骨格。CBCentralManager を初の VIPER モジュールとして実装し（DiscoveredPeripheral 廃止）、状態(CBManagerState)・スキャン・CBAdvertisementData・接続/切断を観察 | build/test/lint/parse/idempotency green |
 | `CBPeripheral` | CBPeripheral | 共有 `BLESession` を導入（スキャン→接続→探索）。サービス/キャラ/記述子の探索・name/RSSI を観察 | build + test + format-check |
 | `CBCharacteristic` | CBCharacteristic | read / write(with/without response) / notify・indicate / MTU・Write Long。暗号化要求キャラへの Read で CBATTError とペアリングを観察 | 〃 |
 | `CBDescriptor` | CBDescriptor | 記述子の探索・read/write（CCCD/CUD 等） | 〃 |
@@ -289,7 +312,7 @@ graph LR
 
 ## 6. 規約（土台増分で固定し全増分が従う）
 
-フォルダ名と型名は、フォーカスする Core Bluetooth クラス名をそのままキーにする。これで対応表と一意にたどれる。たとえば CBCentralManager のサンプルは `Samples/CBCentralManager/CBCentralManagerViewController.swift` と `CBCentralManagerModel.swift` になる。各サンプルは当該クラスに閉じ、土台は `BLESession` と `BLEConstants` を置く共有セッション層 `Shared/` だけを参照し、サンプル間では相互参照しない。SwiftFormat 設定はテンプレートと同一とし、インデント 4・最大幅 120・`organizeDeclarations`・頭字語 ID/URL/UUID を用いる。Makefile は `## ` で自己文書化し、`_` 始まりの内部ターゲットは直接実行を想定しない。
+フォルダ名と型名は、フォーカスする Core Bluetooth クラス名をそのままキーにする。これで対応表と一意にたどれる。複雑画面は機能パッケージ内の `Sources/<Feature>/Module/<CBクラス>/` に VIPER 一式（`CBクラスViewController` / `CBクラスPresenter` / `CBクラスInteractorInput` / `CBクラスRouter`）を置き、Router の `static assemble(...)` を入口にする。単純・説明画面は `ViewController` のみ。VIPER の層とプロトコルはすべて `@MainActor`。各モジュールは `CBPlaygroundCore`（`BLESession`・`BLEConstants`・Entity）だけに依存し、モジュール間では相互参照しない。Interactor 境界（`InteractorInput`）は「そのモジュールが必要とする分だけ」を公開する。SwiftFormat 設定はテンプレートと同一とし、インデント 4・最大幅 120・`organizeDeclarations`・頭字語 ID/URL/UUID を用いる。Makefile は `## ` で自己文書化し、`_` 始まりの内部ターゲットは直接実行を想定しない。
 
 ---
 
@@ -339,6 +362,7 @@ firmware 増分はハードウェア依存のため、機械検証は設定フ�
 | 付録 A | コマンド面を実装本体より先に確定させる順序を採った意図を、統括役（リードエンジニア）からの補足として記録する。 |
 | 付録 D テンプレートの扱い | iOSAppTemplate で土台を一度 bootstrap し不要レイヤを除去する方針を、フィージビリティ実測とともに確定する。 |
 | 付録 F リポジトリ構造 | ios・firmware・captures・docs の全体ディレクトリ構成を定義する。 |
+| 付録 G VIPER + SwiftPM の参照 | RoofWallPainterEdit から採用する機能別パッケージと VIPER の規約を確定する。 |
 
 ---
 
@@ -448,12 +472,25 @@ graph TD
     ROOT --> CAP["captures/<br/>pcap + Xcode ログ"]
 
     IOS --> PROJ["project.yml / Mintfile / .swiftformat"]
-    IOS --> APP["CoreBluetoothPlayground/"]
-    APP --> ENTRY["AppDelegate / SceneDelegate"]
-    APP --> SCR["Screens/<br/>InterfaceListViewController"]
-    APP --> SHARED["Shared/<br/>BLEConstants / BLESession（共有セッション層）"]
-    APP --> SAMPLES["Samples/<br/>CBCentralManager / CBPeripheral /<br/>CBCharacteristic / CBDescriptor / CBPeripheralManager …"]
+    IOS --> APP["CoreBluetoothPlayground/<br/>app shell: AppDelegate / SceneDelegate / InterfaceListViewController"]
+    IOS --> PKG["Package/"]
+    PKG --> CORE3["CBPlaygroundCore/<br/>BLESession・BLEConstants・Entity"]
+    PKG --> FEAT["CentralsFeature / PeripheralsFeature /<br/>ServicesFeature / SupportingFeature / ErrorsFeature<br/>（各 Module/&lt;CBクラス&gt;/ に VIPER）"]
 
     FW --> SUB["nrf52840-ble-debug-bootstrap/<br/>(git submodule)<br/>環境構築 + 正常系 peripheral_uart + Sniffer + verify"]
     FW --> FWA["anomaly_*/<br/>(自前の異常注入派生)"]
 ```
+
+---
+
+## 付録 G. VIPER + SwiftPM の参照（RoofWallPainterEdit）
+
+機能別 SwiftPM 化と VIPER の流儀は `koki-mobile-studio/RoofWallPainter` の `Package/RoofWallPainterEdit` を範とする。同パッケージから採用する規約は次のとおり。
+
+パッケージは `swift-tools 6.0` / `platforms: [.iOS("26.0")]` / `defaultLocalization: "ja"` とし、兄弟パッケージへは `.package(path:)` で依存する。プロダクトは `.library` を 1 つ公開する。
+
+複雑画面は `Sources/<Feature>/Module/<画面>/` に VIPER 一式を置く。View（`ViewController` + `ViewInput`）はユーザー操作を Presenter へ送る。Presenter（`PresenterInput` + 具象）は presentation 状態を状態機械として保持し、Interactor と Router へ振り分ける。Interactor 境界（`InteractorInput`）は「そのモジュールが必要とする分だけ」を切り出した狭いプロトコルで、別モジュールの API はそこから見えない。Router（`RouterInput` + `public` 具象）は `static assemble(...)` で View + Presenter + Router を組み上げて ViewController を返し、画面遷移・モーダル提示を担う。全層・全プロトコルが `@MainActor`。
+
+パッケージ共通の具象 Interactor・Router・View は `Sources/<Feature>/` 直下（`Interactor/` 等）に置き、Entity（ドメインモデル）は共有コアパッケージに集約する。本リポジトリでは `CBPlaygroundCore` が `BLESession`・`BLEConstants`・Entity を持ち、各機能パッケージはこれだけに依存する。
+
+ローカライズは `RoofWallPainterEdit` では xcstrings + xcstrings-tool-plugin を使うが、本リポジトリの挙動確認用途では初期は採用せず、必要になった増分で導入を検討する（意見）。

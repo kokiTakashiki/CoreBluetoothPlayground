@@ -3,6 +3,7 @@
 //  CoreBluetoothPlayground
 //
 
+import CentralsFeature
 import UIKit
 
 // MARK: - Interface
@@ -21,7 +22,7 @@ final class InterfaceListViewController: UITableViewController {
     private let interfaces: [Interface] = [
         Interface(
             symbol: "CBCentralManager",
-            make: { CBCentralManagerViewController() }
+            make: { CBCentralManagerRouter.assemble() }
         ),
     ]
 

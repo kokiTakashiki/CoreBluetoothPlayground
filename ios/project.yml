@@ -13,12 +13,20 @@ settings:
     SWIFT_VERSION: "6.0"
     TARGETED_DEVICE_FAMILY: "1,2"
 
+packages:
+  CBPlaygroundCore:
+    path: Package/CBPlaygroundCore
+  CentralsFeature:
+    path: Package/CentralsFeature
+
 targets:
   CoreBluetoothPlayground:
     type: application
     platform: iOS
     sources:
       - path: CoreBluetoothPlayground
+    dependencies:
+      - package: CentralsFeature
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.CoreBluetoothPlayground
@@ -47,6 +55,8 @@ targets:
       - path: CoreBluetoothPlaygroundTests
     dependencies:
       - target: CoreBluetoothPlayground
+      - package: CBPlaygroundCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.CoreBluetoothPlaygroundTests
+        SWIFT_VERSION: "6.0"

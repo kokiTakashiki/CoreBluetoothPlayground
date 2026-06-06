@@ -1,15 +1,32 @@
 //
 //  CBCentralManagerViewController.swift
-//  CoreBluetoothPlayground
+//  CentralsFeature
 //
 
 import UIKit
+
+// MARK: - CBCentralManagerViewInput
+
+/// Presenter から View への更新インターフェース
+@MainActor
+protocol CBCentralManagerViewInput: AnyObject {
+
+    /// デバイス一覧とスキャン状態を反映する
+    func render(rows: [DeviceRow], scanning: Bool)
+
+    /// ログ領域に 1 行追記する
+    func appendLog(_ message: String)
+}
+
+// MARK: - CBCentralManagerViewController
 
 final class CBCentralManagerViewController: UIViewController {
 
     // MARK: Properties
 
-    private let model = CBCentralManagerModel()
+    var presenter: (any CBCentralManagerPresenterInput)!
+
+    private var rows: [DeviceRow] = []
 
     // MARK: UI Components
 
@@ -85,12 +102,12 @@ final class CBCentralManagerViewController: UIViewController {
         view.backgroundColor = .systemBackground
         setupLayout()
         setupActions()
-        setupModel()
+        presenter.onViewReady()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        model.stopScan()
+        presenter.onViewDidDisappear()
     }
 
     // MARK: Functions
@@ -98,67 +115,55 @@ final class CBCentralManagerViewController: UIViewController {
     // MARK: Private - Layout
 
     private func setupLayout() {
-        // Filter row
         let filterRow = makeRow(label: filterLabel, control: filterSwitch)
         let duplicatesRow = makeRow(label: duplicatesLabel, control: duplicatesSwitch)
 
-        // Button row
         let buttonStack = UIStackView(arrangedSubviews: [startButton, stopButton])
         buttonStack.axis = .horizontal
         buttonStack.spacing = 12
         buttonStack.distribution = .fillEqually
         buttonStack.translatesAutoresizingMaskIntoConstraints = false
 
-        // Device list header
         let deviceHeader = UILabel()
         deviceHeader.text = "発見デバイス"
         deviceHeader.font = .systemFont(ofSize: 14, weight: .semibold)
         deviceHeader.translatesAutoresizingMaskIntoConstraints = false
 
-        // Log header
         let logHeader = UILabel()
         logHeader.text = "ログ"
         logHeader.font = .systemFont(ofSize: 14, weight: .semibold)
         logHeader.translatesAutoresizingMaskIntoConstraints = false
 
-        // Add subviews
         for item in [filterRow, duplicatesRow, buttonStack, deviceHeader, deviceTableView, logHeader, logTextView] {
             view.addSubview(item)
         }
 
         let margin: CGFloat = 16
         NSLayoutConstraint.activate([
-            // Filter row
             filterRow.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: margin),
             filterRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
             filterRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
 
-            // Duplicates row
             duplicatesRow.topAnchor.constraint(equalTo: filterRow.bottomAnchor, constant: 8),
             duplicatesRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
             duplicatesRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
 
-            // Button stack
             buttonStack.topAnchor.constraint(equalTo: duplicatesRow.bottomAnchor, constant: 12),
             buttonStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
             buttonStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
             buttonStack.heightAnchor.constraint(equalToConstant: 44),
 
-            // Device header
             deviceHeader.topAnchor.constraint(equalTo: buttonStack.bottomAnchor, constant: 16),
             deviceHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
 
-            // Device table
             deviceTableView.topAnchor.constraint(equalTo: deviceHeader.bottomAnchor, constant: 4),
             deviceTableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             deviceTableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             deviceTableView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.28),
 
-            // Log header
             logHeader.topAnchor.constraint(equalTo: deviceTableView.bottomAnchor, constant: 8),
             logHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
 
-            // Log text view
             logTextView.topAnchor.constraint(equalTo: logHeader.bottomAnchor, constant: 4),
             logTextView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
             logTextView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
@@ -185,37 +190,29 @@ final class CBCentralManagerViewController: UIViewController {
 
     @objc
     private func didTapStart() {
-        model.startScan(
+        presenter.onStartTapped(
             filterNUS: filterSwitch.isOn,
             allowDuplicates: duplicatesSwitch.isOn
         )
-        startButton.isEnabled = false
-        stopButton.isEnabled = true
     }
 
     @objc
     private func didTapStop() {
-        model.stopScan()
-        startButton.isEnabled = true
-        stopButton.isEnabled = false
+        presenter.onStopTapped()
+    }
+}
+
+// MARK: - CBCentralManagerViewInput
+
+extension CBCentralManagerViewController: CBCentralManagerViewInput {
+    func render(rows: [DeviceRow], scanning: Bool) {
+        self.rows = rows
+        deviceTableView.reloadData()
+        startButton.isEnabled = !scanning
+        stopButton.isEnabled = scanning
     }
 
-    // MARK: Private - Model
-
-    private func setupModel() {
-        model.onLog = { [weak self] message in
-            DispatchQueue.main.async {
-                self?.appendLog(message)
-            }
-        }
-        model.onUpdate = { [weak self] in
-            DispatchQueue.main.async {
-                self?.deviceTableView.reloadData()
-            }
-        }
-    }
-
-    private func appendLog(_ message: String) {
+    func appendLog(_ message: String) {
         let current = logTextView.text ?? ""
         logTextView.text = current.isEmpty ? message : current + "\n" + message
         let range = NSRange(location: logTextView.text.count - 1, length: 0)
@@ -227,15 +224,15 @@ final class CBCentralManagerViewController: UIViewController {
 
 extension CBCentralManagerViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        model.discovered.count
+        rows.count
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "DeviceCell", for: indexPath)
-        let device = model.discovered[indexPath.row]
+        let row = rows[indexPath.row]
         var config = cell.defaultContentConfiguration()
-        config.text = device.name ?? "(no name)"
-        config.secondaryText = "RSSI: \(device.rssi) | \(device.id.uuidString.prefix(8))…"
+        config.text = row.name
+        config.secondaryText = "\(row.rssi) | \(row.advertisementSummary)"
         cell.contentConfiguration = config
         return cell
     }

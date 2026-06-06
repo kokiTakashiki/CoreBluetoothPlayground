@@ -101,3 +101,13 @@
 **理由:** 本リポジトリは個人の総復習用であり、対象は最新の iOS 実機・Xcode（26 系）。最新の言語モードで Core Bluetooth の挙動を確認したい。Swift 6 の strict concurrency は将来の並行性バグを早期に検出する利点もある。
 
 **影響:** Swift 6 言語モードでは、非 Sendable な `CBUUID` の静的格納定数（`static let`）が concurrency-safe でないと判定される。これに対し `Shared/BLEConstants` の各 UUID は計算プロパティ `static var { CBUUID(string:) }` とし、静的格納状態を持たせない（並行チェックの対象外）。CBUUID は不変で値比較されるため、都度生成しても CoreBluetooth から見た振る舞いは同一であり、`nonisolated(unsafe)` を避けられる。CI は macos-15 + 最新安定 Xcode（iOS 26 SDK / Swift 6）で build・test とも green を確認済み。
+
+---
+
+### D-012: 機能別 SwiftPM パッケージ（Apple カテゴリ単位）+ 複雑画面は VIPER を採用する
+
+**決定:** 機能別 SwiftPM パッケージ（Apple カテゴリ単位）+ 複雑画面は VIPER（RoofWallPainterEdit 準拠）を採用する。CBCentralManager を初の VIPER モジュール化し `DiscoveredPeripheral` を廃止する。
+
+**理由:** プロジェクトが大きくなる前提で依存を機能境界で分離し、Interactor が必要な範囲だけ公開・Presenter が表示 VM を作る形にして UI 結合 DTO を排する。`DiscoveredPeripheral`（名前・RSSI・広告データを UI 向けに整形した DTO）は Interactor に保持すべき情報を View 結合で束ねており、VIPER では Interactor が生の `Discovery` Entity を公開し、Presenter が `DeviceRow`（表示 VM）を組み立てる形にする。
+
+**影響:** `ios/Package/CBPlaygroundCore`・`ios/Package/CentralsFeature` 新設。`BLEConstants` は `CBPlaygroundCore` へ移動（`public enum BLEConstants`）。`Discovery`（生データ Entity）を `CBPlaygroundCore` に追加。`CentralsFeature` に CBCentralManager VIPER 一式（InteractorInput / Presenter / ViewController / Router）と具象 Interactor `CBCentralScanInteractor` を配置。app shell（`InterfaceListViewController`）は `import CentralsFeature` し `CBCentralManagerRouter.assemble()` を呼ぶ。旧 `Samples/CBCentralManager/`・`Shared/BLEConstants.swift` を削除。`project.yml` に `packages:` セクション追加と app target に `CentralsFeature` 依存を追加。

@@ -5,7 +5,7 @@
 | 区分 | シンボル | 扱い | 画面での内容 | 状態 |
 | --- | --- | --- | --- | --- |
 | Centrals | `CBCentral` | 操作 | iOS を Peripheral 役にし、購読してきた Central と maximumUpdateValueLength を観察 | 予定 |
-| Centrals | `CBCentralManager` | 操作 | 状態・スキャン・接続/切断を操作して観察 | 実装済み（PR1） |
+| Centrals | `CBCentralManager` | 操作 | 状態・スキャン・接続/切断を操作して観察 | 実装済み（CentralsFeature / VIPER）（PR1） |
 | Centrals | `CBCentralManagerDelegate` | 操作 | 各コールバックの発火を実機操作でログ表示 | 予定 |
 | Peripherals | `CBPeripheral` | 操作 | 探索・read/write・RSSI 取得を操作して観察 | 予定 |
 | Peripherals | `CBPeripheralDelegate` | 操作 | 探索・読み書き完了コールバックをログ表示 | 予定 |
