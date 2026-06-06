@@ -1,0 +1,65 @@
+name: CoreBluetoothPlayground
+
+options:
+  bundleIdPrefix: com.example
+  developmentLanguage: ja
+  knownRegions: [ja]
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+
+packages:
+  CBPlaygroundCore:
+    path: Package/CBPlaygroundCore
+  CBPlaygroundConsole:
+    path: Package/CBPlaygroundConsole
+  CentralsFeature:
+    path: Package/CentralsFeature
+
+targets:
+  CoreBluetoothPlayground:
+    type: application
+    platform: iOS
+    sources:
+      - path: CoreBluetoothPlayground
+    dependencies:
+      - package: CentralsFeature
+      - package: CBPlaygroundConsole
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.CoreBluetoothPlayground
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+    info:
+      path: CoreBluetoothPlayground/Info.plist
+      properties:
+        CFBundleDisplayName: CoreBluetoothPlayground
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default Configuration
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate
+        NSBluetoothAlwaysUsageDescription: "BLE 機器の挙動確認のため Bluetooth を使用します。"
+
+  CoreBluetoothPlaygroundTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: CoreBluetoothPlaygroundTests
+    dependencies:
+      - target: CoreBluetoothPlayground
+      - package: CBPlaygroundCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.CoreBluetoothPlaygroundTests
+        SWIFT_VERSION: "6.0"

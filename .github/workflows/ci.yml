@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  makefile-parse:
+    name: Makefile Parse & PHONY Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Verify .PHONY covers all targets
+        run: |
+          # Extract declared PHONY targets (handle multi-line .PHONY via make -p)
+          PHONY_TARGETS=$(make -p 2>/dev/null | grep '^\.PHONY:' | sed 's/\.PHONY://' | tr ' ' '\n' | grep -v '^$' | sort)
+          # Extract all public targets (lines like "target: ...")
+          ALL_TARGETS=$(grep -E '^[a-zA-Z_][a-zA-Z0-9_-]+:' Makefile | sed 's/:.*//' | sort)
+          echo "=== PHONY targets ==="
+          echo "$PHONY_TARGETS"
+          echo "=== All targets ==="
+          echo "$ALL_TARGETS"
+          # Check each target is in PHONY
+          MISSING=""
+          for t in $ALL_TARGETS; do
+            if ! echo "$PHONY_TARGETS" | grep -q "^${t}$"; then
+              MISSING="$MISSING $t"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "ERROR: These targets are not in .PHONY:$MISSING"
+            exit 1
+          fi
+          echo "All targets are in .PHONY ✓"
+
+      - name: Dry-run parse all targets
+        run: |
+          TARGETS=$(grep -E '^[a-zA-Z_][a-zA-Z0-9_-]+:' Makefile | sed 's/:.*//')
+          for t in $TARGETS; do
+            echo "Parsing: $t"
+            make -n "$t" 2>&1 | head -5 || true
+          done
+          echo "All targets parsed ✓"
+
+      - name: Verify default goal is help and outputs target list
+        run: |
+          OUTPUT=$(make 2>&1)
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -q "setup" || { echo "ERROR: 'setup' not found in help output"; exit 1; }
+          echo "Default goal outputs help with 'setup' ✓"
+
+  idempotency:
+    # 冪等性検査は help / clean / list-samples のみで mint/Xcode を要さないため ubuntu で十分・高速。
+    name: Idempotency Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Run make help twice and compare
+        run: |
+          make help > /tmp/help1.txt 2>&1
+          make help > /tmp/help2.txt 2>&1
+          diff /tmp/help1.txt /tmp/help2.txt || { echo "ERROR: help output differs between runs"; exit 1; }
+          echo "help is idempotent ✓"
+
+      - name: Run make clean twice without error
+        run: |
+          make clean
+          make clean
+          echo "clean is idempotent ✓"
+
+      - name: Run make list-samples twice and compare
+        run: |
+          make list-samples > /tmp/samples1.txt 2>&1
+          make list-samples > /tmp/samples2.txt 2>&1
+          diff /tmp/samples1.txt /tmp/samples2.txt || { echo "ERROR: list-samples output differs between runs"; exit 1; }
+          echo "list-samples is idempotent ✓"
+
+  ios-build:
+    # XcodeGen の依存 XcodeProj 9.x は Swift 6 を要するため、最新安定 Xcode を持つ macos-15 を使う。
+    name: iOS Build (Simulator)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+
+      - name: Install mint
+        run: brew install mint || true
+
+      - name: Build iOS app (mint bootstrap + xcodegen + xcodebuild)
+        run: make ios-build
+
+  ios-test:
+    # 単体テストを機械ゲートとして強制する。XcodeGen と同じく Swift 6 を要するため macos-15 + 最新 Xcode。
+    name: iOS Test (Simulator)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+
+      - name: Install mint
+        run: brew install mint || true
+
+      - name: Run unit tests (xcodegen + xcodebuild test)
+        run: make ios-test
+
+  swiftformat-lint:
+    name: SwiftFormat Lint
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install mint
+        run: brew install mint || true
+
+      - name: Run SwiftFormat lint check
+        run: make ios-format-check
