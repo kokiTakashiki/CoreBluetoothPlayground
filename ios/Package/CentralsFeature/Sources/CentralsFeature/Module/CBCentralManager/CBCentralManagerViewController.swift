@@ -115,7 +115,7 @@ final class CBCentralManagerViewController: UIViewController {
 
     @objc
     private func didTapLogs() {
-        let logsVC = CBLogConsole.makeViewController(label: "CBCentralManager")
+        let logsVC = CBLogConsole.makeViewController()
         present(logsVC, animated: true)
     }
 
