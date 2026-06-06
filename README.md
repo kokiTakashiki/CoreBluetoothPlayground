@@ -36,6 +36,13 @@ app shell はインターフェース一覧メニュー（`InterfaceListViewCont
 
 全インターフェースの一覧と状態は [docs/interface-mapping.md](docs/interface-mapping.md) を参照してください。
 
+## ログ閲覧
+
+Core Bluetooth の挙動ログは [Pulse](https://github.com/kean/Pulse)（5.2.2）で記録・閲覧します。
+
+- **全件ログ**: トピック一覧画面のナビバー右「Logs」ボタンをタップ
+- **インターフェース別ログ**: 各画面（例: CBCentralManager）のナビバー右「Logs」ボタンをタップ（ConsoleView のフィルタ UI でラベルを "CBCentralManager" に絞り込むと該当ログだけ表示できます）
+
 ## クイックスタート
 
 ```sh

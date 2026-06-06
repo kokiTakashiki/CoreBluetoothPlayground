@@ -123,3 +123,28 @@
 **経緯（補足）:** `struct Interface`（クロージャ詰め）→ `protocol Topic`（"Interface=protocol" の名前由来の誤解）→ `struct Topic`（クロージャ格納が奇抜）と回り道したのち、最終的に「VC 生成を持たない純データ enum + Router.assemble() 明示呼び出し」へ収束した。
 
 **影響:** `CBPlaygroundCore` の `Topic.swift` は削除（Core には置かない）。`enum Topic` は app shell の `TopicListViewController.swift` に internal で置く。`CBCentralManagerRouter` は `assemble()` のみ（protocol 準拠なし）。一覧画面は `InterfaceListViewController` → `TopicListViewController` に改名、画面タイトルは "Core Bluetooth Topics"。app target の `CBPlaygroundCore` 依存は外す（app shell は Router のため `CentralsFeature` だけ参照。テストターゲットは BLEConstants 検証で `CBPlaygroundCore` 依存を維持）。将来 Feature 側がトピックを自前公開する形にするなら、その時に共有型を再導入する。
+
+---
+
+### D-014: ログ管理と閲覧 UI に Pulse（5.2.2）を採用する
+
+**決定:** ログ管理と閲覧 UI に [Pulse](https://github.com/kean/Pulse) 5.2.2 を採用する。Core に `BLELog` facade（`CBPlaygroundCore`）を置き、共有 UI パッケージ `CBPlaygroundConsole` に `ConsoleView` を UIKit ホストする `CBLogConsole` を配置する。Interactor の `onLog: ((String) -> Void)?` 配線（Interactor → Presenter → View のログ送出と UITextView）を全層撤去する。
+
+**理由:**
+- 実機内でログを閲覧できる UI が Pulse の `ConsoleView`（PulseUI）として標準提供されており、自前のログビューア（UITextView）が不要になる。
+- `label` パラメータでインターフェース別（例: "CBCentralManager"）にフィルタリングできる（ConsoleView の UI からラベル絞り込みが可能）。
+- Interactor の `onLog` クロージャ → Presenter の `logBuffer` / `handleLog` → View の `appendLog` という配線が消え、各層の責務境界が締まる。ログは `BLELog.log(_:_:level:)` → `LoggerStore.shared.storeMessage(...)` の直通になる。
+
+**ConsoleView のラベル初期フィルタについて:** `ConsoleView` の公開 init（`init(store:mode:delegate:)`）にはラベルを初期フィルタとして渡す引数が存在しない（`ConsoleEnvironment.init` は `package` 修飾で外部公開されていない）。そのため `CBLogConsole.makeViewController(label:)` は引数を受け取るが現時点では全件表示とし、ユーザーは ConsoleView のフィルタ UI でラベルを絞り込む。
+
+**影響:**
+- `CBPlaygroundCore/Package.swift`: Pulse 5.2.2 依存追加、target に `.product(name: "Pulse", ...)` 追加。
+- `CBPlaygroundCore/Sources/CBPlaygroundCore/BLELog.swift`: 新規作成（Pulse facade）。
+- `ios/Package/CBPlaygroundConsole/`: 新規パッケージ（PulseUI 依存、`CBLogConsole` を公開）。
+- `CentralsFeature/Package.swift`: `CBPlaygroundConsole` 依存追加。
+- `CBCentralManagerInteractorInput`: `onLog` プロパティ削除。
+- `CBCentralScanInteractor`: `onLog` プロパティ削除、`log(_:)` を `BLELog.log(...)` 呼び出しに変更、`DateFormatter+logFormatter` 削除。
+- `CBCentralManagerPresenter`: `logBuffer`・`handleLog`・`view?.appendLog(...)` 削除。
+- `CBCentralManagerViewController` / `CBCentralManagerViewInput`: `logTextView`・`appendLog(_:)` 削除、ナビバー右に「Logs」ボタン追加（`CBLogConsole.makeViewController(label: "CBCentralManager")` を present）。
+- `TopicListViewController`: `CBPlaygroundConsole` import、ナビバー右に「Logs」ボタン追加（全件表示）。
+- `ios/project.yml`: `CBPlaygroundConsole` をローカルパッケージに追加、app target 依存に追加。

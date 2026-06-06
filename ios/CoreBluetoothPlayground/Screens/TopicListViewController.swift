@@ -3,6 +3,7 @@
 //  CoreBluetoothPlayground
 //
 
+import CBPlaygroundConsole
 import CentralsFeature
 import UIKit
 
@@ -20,6 +21,7 @@ final class TopicListViewController: UITableViewController {
         super.viewDidLoad()
         title = "Core Bluetooth Topics"
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "TopicCell")
+        setupNavigationBar()
     }
 
     // MARK: UITableViewDataSource
@@ -48,4 +50,25 @@ final class TopicListViewController: UITableViewController {
             }
         navigationController?.pushViewController(viewController, animated: true)
     }
+
+    // MARK: Functions
+
+    // MARK: Private
+
+    private func setupNavigationBar() {
+        let logsButton = UIBarButtonItem(
+            title: "Logs",
+            style: .plain,
+            target: self,
+            action: #selector(didTapLogs)
+        )
+        navigationItem.rightBarButtonItem = logsButton
+    }
+
+    @objc
+    private func didTapLogs() {
+        let logsVC = CBLogConsole.makeViewController()
+        navigationController?.pushViewController(logsVC, animated: true)
+    }
+
 }

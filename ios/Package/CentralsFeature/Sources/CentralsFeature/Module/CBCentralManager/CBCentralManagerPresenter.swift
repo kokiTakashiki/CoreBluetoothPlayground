@@ -46,7 +46,6 @@ final class CBCentralManagerPresenter: CBCentralManagerPresenterInput {
     weak var view: (any CBCentralManagerViewInput)?
 
     private var interactor: any CBCentralManagerInteractorInput
-    private var logBuffer: [String] = []
 
     // MARK: Lifecycle
 
@@ -80,9 +79,6 @@ final class CBCentralManagerPresenter: CBCentralManagerPresenterInput {
         interactor.onChange = { [weak self] in
             self?.handleChange()
         }
-        interactor.onLog = { [weak self] message in
-            self?.handleLog(message)
-        }
         handleChange()
     }
 
@@ -107,11 +103,6 @@ final class CBCentralManagerPresenter: CBCentralManagerPresenterInput {
         view?.render(rows: makeRows(), scanning: scanning)
     }
 
-    private func handleLog(_ message: String) {
-        logBuffer.append(message)
-        view?.appendLog(message)
-    }
-
     private func makeRows() -> [DeviceRow] {
         interactor.discoveries().map { discovery in
             DeviceRow(
@@ -121,5 +112,4 @@ final class CBCentralManagerPresenter: CBCentralManagerPresenterInput {
             )
         }
     }
-
 }

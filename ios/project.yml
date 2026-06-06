@@ -16,6 +16,8 @@ settings:
 packages:
   CBPlaygroundCore:
     path: Package/CBPlaygroundCore
+  CBPlaygroundConsole:
+    path: Package/CBPlaygroundConsole
   CentralsFeature:
     path: Package/CentralsFeature
 
@@ -27,6 +29,7 @@ targets:
       - path: CoreBluetoothPlayground
     dependencies:
       - package: CentralsFeature
+      - package: CBPlaygroundConsole
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.CoreBluetoothPlayground

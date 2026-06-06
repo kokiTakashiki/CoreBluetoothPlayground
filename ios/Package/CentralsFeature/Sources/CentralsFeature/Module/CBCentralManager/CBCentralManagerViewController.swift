@@ -3,6 +3,7 @@
 //  CentralsFeature
 //
 
+import CBPlaygroundConsole
 import UIKit
 
 // MARK: - CBCentralManagerViewInput
@@ -13,9 +14,6 @@ protocol CBCentralManagerViewInput: AnyObject {
 
     /// デバイス一覧とスキャン状態を反映する
     func render(rows: [DeviceRow], scanning: Bool)
-
-    /// ログ領域に 1 行追記する
-    func appendLog(_ message: String)
 }
 
 // MARK: - CBCentralManagerViewController
@@ -84,22 +82,13 @@ final class CBCentralManagerViewController: UIViewController {
         return t
     }()
 
-    private let logTextView: UITextView = {
-        let t = UITextView()
-        t.translatesAutoresizingMaskIntoConstraints = false
-        t.isEditable = false
-        t.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        t.backgroundColor = UIColor.systemGray6
-        t.layer.cornerRadius = 6
-        return t
-    }()
-
     // MARK: Overridden Functions
 
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "CBCentralManager"
         view.backgroundColor = .systemBackground
+        setupNavigationBar()
         setupLayout()
         setupActions()
         presenter.onViewReady()
@@ -111,6 +100,24 @@ final class CBCentralManagerViewController: UIViewController {
     }
 
     // MARK: Functions
+
+    // MARK: Private - Navigation
+
+    private func setupNavigationBar() {
+        let logsButton = UIBarButtonItem(
+            title: "Logs",
+            style: .plain,
+            target: self,
+            action: #selector(didTapLogs)
+        )
+        navigationItem.rightBarButtonItem = logsButton
+    }
+
+    @objc
+    private func didTapLogs() {
+        let logsVC = CBLogConsole.makeViewController(label: "CBCentralManager")
+        present(logsVC, animated: true)
+    }
 
     // MARK: Private - Layout
 
@@ -129,12 +136,7 @@ final class CBCentralManagerViewController: UIViewController {
         deviceHeader.font = .systemFont(ofSize: 14, weight: .semibold)
         deviceHeader.translatesAutoresizingMaskIntoConstraints = false
 
-        let logHeader = UILabel()
-        logHeader.text = "ログ"
-        logHeader.font = .systemFont(ofSize: 14, weight: .semibold)
-        logHeader.translatesAutoresizingMaskIntoConstraints = false
-
-        for item in [filterRow, duplicatesRow, buttonStack, deviceHeader, deviceTableView, logHeader, logTextView] {
+        for item in [filterRow, duplicatesRow, buttonStack, deviceHeader, deviceTableView] {
             view.addSubview(item)
         }
 
@@ -159,15 +161,7 @@ final class CBCentralManagerViewController: UIViewController {
             deviceTableView.topAnchor.constraint(equalTo: deviceHeader.bottomAnchor, constant: 4),
             deviceTableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             deviceTableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            deviceTableView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.28),
-
-            logHeader.topAnchor.constraint(equalTo: deviceTableView.bottomAnchor, constant: 8),
-            logHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
-
-            logTextView.topAnchor.constraint(equalTo: logHeader.bottomAnchor, constant: 4),
-            logTextView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: margin),
-            logTextView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -margin),
-            logTextView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -margin),
+            deviceTableView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
 
         deviceTableView.dataSource = self
@@ -210,13 +204,6 @@ extension CBCentralManagerViewController: CBCentralManagerViewInput {
         deviceTableView.reloadData()
         startButton.isEnabled = !scanning
         stopButton.isEnabled = scanning
-    }
-
-    func appendLog(_ message: String) {
-        let current = logTextView.text ?? ""
-        logTextView.text = current.isEmpty ? message : current + "\n" + message
-        let range = NSRange(location: logTextView.text.count - 1, length: 0)
-        logTextView.scrollRangeToVisible(range)
     }
 }
 

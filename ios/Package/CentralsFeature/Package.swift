@@ -10,12 +10,14 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../CBPlaygroundCore"),
+        .package(path: "../CBPlaygroundConsole"),
     ],
     targets: [
         .target(
             name: "CentralsFeature",
             dependencies: [
                 .product(name: "CBPlaygroundCore", package: "CBPlaygroundCore"),
+                .product(name: "CBPlaygroundConsole", package: "CBPlaygroundConsole"),
             ]
         ),
         .testTarget(

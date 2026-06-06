@@ -13,10 +13,13 @@ import Foundation
 @MainActor
 final class CBCentralScanInteractor: NSObject {
 
+    // MARK: Static Properties
+
+    private static let logLabel = "CBCentralManager"
+
     // MARK: Properties
 
     var onChange: (() -> Void)?
-    var onLog: ((String) -> Void)?
 
     /// 発見結果の蓄積。CBCentralManager は一覧を保持しないため Interactor が持つが、完全に private とし
     /// 公開は `discoveries()` 経由のみとする。
@@ -77,8 +80,7 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
     // MARK: Private
 
     private func log(_ message: String) {
-        let timestamp = DateFormatter.logFormatter.string(from: Date())
-        onLog?("[\(timestamp)] \(message)")
+        BLELog.log(Self.logLabel, message)
     }
 
     private func stateDescription(for cbState: CBManagerState) -> String {
@@ -140,14 +142,4 @@ extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
         @unknown default: "unknown(\(cbState.rawValue))"
         }
     }
-}
-
-// MARK: - DateFormatter + logFormatter
-
-private extension DateFormatter {
-    static let logFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss.SSS"
-        return f
-    }()
 }

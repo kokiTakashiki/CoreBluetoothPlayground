@@ -2,25 +2,21 @@
 import PackageDescription
 
 let package = Package(
-    name: "CBPlaygroundCore",
+    name: "CBPlaygroundConsole",
     defaultLocalization: "ja",
     platforms: [.iOS("26.0")],
     products: [
-        .library(name: "CBPlaygroundCore", targets: ["CBPlaygroundCore"]),
+        .library(name: "CBPlaygroundConsole", targets: ["CBPlaygroundConsole"]),
     ],
     dependencies: [
         .package(url: "https://github.com/kean/Pulse", exact: "5.2.2"),
     ],
     targets: [
         .target(
-            name: "CBPlaygroundCore",
+            name: "CBPlaygroundConsole",
             dependencies: [
-                .product(name: "Pulse", package: "Pulse"),
+                .product(name: "PulseUI", package: "Pulse"),
             ]
-        ),
-        .testTarget(
-            name: "CBPlaygroundCoreTests",
-            dependencies: ["CBPlaygroundCore"]
         ),
     ]
 )

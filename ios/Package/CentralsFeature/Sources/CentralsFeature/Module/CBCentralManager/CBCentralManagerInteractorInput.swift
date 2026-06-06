@@ -24,9 +24,6 @@ protocol CBCentralManagerInteractorInput: AnyObject {
     /// discoveries / state 変化通知
     var onChange: (() -> Void)? { get set }
 
-    /// 状態遷移・発見イベントのログ通知
-    var onLog: ((String) -> Void)? { get set }
-
     // MARK: 操作
 
     /// スキャンを開始する
