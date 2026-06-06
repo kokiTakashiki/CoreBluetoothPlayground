@@ -39,7 +39,7 @@ final class CBCentralScanInteractor: NSObject {
 
 extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
     /// 状態は保持せず、その都度 CBCentralManager に問い合わせて返す。
-    func cbState() -> CBManagerState {
+    func currentState() -> CBManagerState {
         centralManager.state
     }
 
@@ -63,9 +63,9 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
         let options: [String: Any] = [CBCentralManagerScanOptionAllowDuplicatesKey: allowDuplicates]
         centralManager.scanForPeripherals(withServices: serviceUUIDs, options: options)
 
-        let filterDesc = filterNUS ? "NUS フィルタ ON" : "フィルタなし"
-        let dupDesc = allowDuplicates ? "重複許可 ON" : "重複許可 OFF"
-        log("🔍 スキャン開始 [\(filterDesc), \(dupDesc)]")
+        let filterDescription = filterNUS ? "NUS フィルタ ON" : "フィルタなし"
+        let duplicatesDescription = allowDuplicates ? "重複許可 ON" : "重複許可 OFF"
+        log("🔍 スキャン開始 [\(filterDescription), \(duplicatesDescription)]")
     }
 
     func stopScan() {
@@ -83,8 +83,8 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
         BLELog.log(Self.logLabel, message)
     }
 
-    private func stateDescription(for cbState: CBManagerState) -> String {
-        switch cbState {
+    private func stateDescription(for state: CBManagerState) -> String {
+        switch state {
         case .poweredOff:
             "Bluetooth がオフです"
         case .unauthorized:
@@ -96,7 +96,7 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
         case .unknown:
             "Bluetooth の状態が不明です"
         default:
-            "Bluetooth が利用できません (state=\(cbState.rawValue))"
+            "Bluetooth が利用できません (state=\(state.rawValue))"
         }
     }
 }
@@ -105,8 +105,8 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
 
 extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        let desc = centralStateDescription(for: central.state)
-        log("📡 状態変化: \(desc)")
+        let description = centralStateDescription(for: central.state)
+        log("📡 状態変化: \(description)")
         onChange?()
     }
 
@@ -118,28 +118,28 @@ extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
     ) {
         let discovery = Discovery(peripheral: peripheral, advertisementData: advertisementData, rssi: RSSI)
         let name = peripheral.name ?? "(no name)"
-        let idPrefix = peripheral.identifier.uuidString.prefix(8)
+        let identifierPrefix = peripheral.identifier.uuidString.prefix(8)
 
         if let index = discovered.firstIndex(where: { $0.peripheral.identifier == peripheral.identifier }) {
             discovered[index] = discovery
-            log("↻ 更新: \(name) [\(idPrefix)…] RSSI=\(RSSI)")
+            log("↻ 更新: \(name) [\(identifierPrefix)…] RSSI=\(RSSI)")
         }
         else {
             discovered.append(discovery)
-            log("✚ 発見: \(name) [\(idPrefix)…] RSSI=\(RSSI)")
+            log("✚ 発見: \(name) [\(identifierPrefix)…] RSSI=\(RSSI)")
         }
         onChange?()
     }
 
-    private func centralStateDescription(for cbState: CBManagerState) -> String {
-        switch cbState {
+    private func centralStateDescription(for state: CBManagerState) -> String {
+        switch state {
         case .unknown: "unknown"
         case .resetting: "resetting"
         case .unsupported: "unsupported"
         case .unauthorized: "unauthorized"
         case .poweredOff: "poweredOff"
         case .poweredOn: "poweredOn"
-        @unknown default: "unknown(\(cbState.rawValue))"
+        @unknown default: "unknown(\(state.rawValue))"
         }
     }
 }

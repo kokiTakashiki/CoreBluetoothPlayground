@@ -29,57 +29,57 @@ final class CBCentralManagerViewController: UIViewController {
     // MARK: UI Components
 
     private let filterSwitch: UISwitch = {
-        let s = UISwitch()
-        s.translatesAutoresizingMaskIntoConstraints = false
-        return s
+        let switchControl = UISwitch()
+        switchControl.translatesAutoresizingMaskIntoConstraints = false
+        return switchControl
     }()
 
     private let filterLabel: UILabel = {
-        let l = UILabel()
-        l.text = "Service UUID フィルタ (NUS)"
-        l.font = .systemFont(ofSize: 14)
-        l.translatesAutoresizingMaskIntoConstraints = false
-        return l
+        let label = UILabel()
+        label.text = "Service UUID フィルタ (NUS)"
+        label.font = .systemFont(ofSize: 14)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
     }()
 
     private let duplicatesSwitch: UISwitch = {
-        let s = UISwitch()
-        s.translatesAutoresizingMaskIntoConstraints = false
-        return s
+        let switchControl = UISwitch()
+        switchControl.translatesAutoresizingMaskIntoConstraints = false
+        return switchControl
     }()
 
     private let duplicatesLabel: UILabel = {
-        let l = UILabel()
-        l.text = "重複許可 (allowDuplicates)"
-        l.font = .systemFont(ofSize: 14)
-        l.translatesAutoresizingMaskIntoConstraints = false
-        return l
+        let label = UILabel()
+        label.text = "重複許可 (allowDuplicates)"
+        label.font = .systemFont(ofSize: 14)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
     }()
 
     private let startButton: UIButton = {
-        var config = UIButton.Configuration.filled()
-        config.title = "Start"
-        config.baseBackgroundColor = .systemBlue
-        let b = UIButton(configuration: config)
-        b.translatesAutoresizingMaskIntoConstraints = false
-        return b
+        var configuration = UIButton.Configuration.filled()
+        configuration.title = "Start"
+        configuration.baseBackgroundColor = .systemBlue
+        let button = UIButton(configuration: configuration)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
     }()
 
     private let stopButton: UIButton = {
-        var config = UIButton.Configuration.filled()
-        config.title = "Stop"
-        config.baseBackgroundColor = .systemRed
-        let b = UIButton(configuration: config)
-        b.translatesAutoresizingMaskIntoConstraints = false
-        b.isEnabled = false
-        return b
+        var configuration = UIButton.Configuration.filled()
+        configuration.title = "Stop"
+        configuration.baseBackgroundColor = .systemRed
+        let button = UIButton(configuration: configuration)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isEnabled = false
+        return button
     }()
 
     private let deviceTableView: UITableView = {
-        let t = UITableView(frame: .zero, style: .plain)
-        t.translatesAutoresizingMaskIntoConstraints = false
-        t.register(UITableViewCell.self, forCellReuseIdentifier: "DeviceCell")
-        return t
+        let tableView = UITableView(frame: .zero, style: .plain)
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "DeviceCell")
+        return tableView
     }()
 
     // MARK: Overridden Functions
@@ -115,8 +115,8 @@ final class CBCentralManagerViewController: UIViewController {
 
     @objc
     private func didTapLogs() {
-        let logsVC = CBLogConsole.makeViewController()
-        present(logsVC, animated: true)
+        let logsViewController = CBLogConsole.makeViewController()
+        present(logsViewController, animated: true)
     }
 
     // MARK: Private - Layout
@@ -217,10 +217,10 @@ extension CBCentralManagerViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "DeviceCell", for: indexPath)
         let row = rows[indexPath.row]
-        var config = cell.defaultContentConfiguration()
-        config.text = row.name
-        config.secondaryText = "\(row.rssi) | \(row.advertisementSummary)"
-        cell.contentConfiguration = config
+        var configuration = cell.defaultContentConfiguration()
+        configuration.text = row.name
+        configuration.secondaryText = "\(row.rssi) | \(row.advertisementSummary)"
+        cell.contentConfiguration = configuration
         return cell
     }
 }

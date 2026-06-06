@@ -11,13 +11,13 @@ import XCTest
 final class CBCentralManagerAssembleTests: XCTestCase {
 
     func testAssembleReturnsViewController() {
-        let vc = CBCentralManagerRouter.assemble()
-        XCTAssertNotNil(vc)
-        XCTAssertTrue(vc is UIViewController)
+        let viewController = CBCentralManagerRouter.assemble()
+        XCTAssertNotNil(viewController)
+        XCTAssertTrue(viewController is UIViewController)
     }
 
     func testAssembledViewControllerType() {
-        let vc = CBCentralManagerRouter.assemble()
-        XCTAssertTrue(vc is UIViewController)
+        let viewController = CBCentralManagerRouter.assemble()
+        XCTAssertTrue(viewController is UIViewController)
     }
 }

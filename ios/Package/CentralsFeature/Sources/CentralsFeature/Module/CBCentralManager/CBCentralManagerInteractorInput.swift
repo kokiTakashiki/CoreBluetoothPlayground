@@ -14,7 +14,7 @@ protocol CBCentralManagerInteractorInput: AnyObject {
     // MARK: 読み取り
 
     /// CBCentralManager の現在の状態を返す。Interactor は状態を保持せず、その都度問い合わせて返す。
-    func cbState() -> CBManagerState
+    func currentState() -> CBManagerState
 
     /// スキャン中に発見した Discovery の一覧（identifier で重複排除済み）を返す。
     /// CBCentralManager は一覧を保持しないため Interactor が蓄積するが、その配列は private とし、

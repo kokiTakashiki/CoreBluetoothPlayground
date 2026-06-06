@@ -32,9 +32,9 @@ final class TopicListViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "TopicCell", for: indexPath)
-        var config = cell.defaultContentConfiguration()
-        config.text = topics[indexPath.row].title
-        cell.contentConfiguration = config
+        var configuration = cell.defaultContentConfiguration()
+        configuration.text = topics[indexPath.row].title
+        cell.contentConfiguration = configuration
         cell.accessoryType = .disclosureIndicator
         return cell
     }
@@ -67,8 +67,8 @@ final class TopicListViewController: UITableViewController {
 
     @objc
     private func didTapLogs() {
-        let logsVC = CBLogConsole.makeViewController()
-        navigationController?.pushViewController(logsVC, animated: true)
+        let logsViewController = CBLogConsole.makeViewController()
+        navigationController?.pushViewController(logsViewController, animated: true)
     }
 
 }
