@@ -55,21 +55,40 @@ final class CBCentralManagerPresenter: CBCentralManagerPresenterInput {
 
     // MARK: Static Functions
 
-    /// 広告データを表示用文字列に整形する（UI 結合の整形は Presenter で行う）
+    /// 広告データを表示用文字列に整形する（UI 結合の整形は Presenter で行う）。
+    /// 広告データの各キーはいずれも任意であり、欠落は異常ではない。各 if に else を設けて
+    /// 「無い場合になぜ省くか」を明示し、判断の抜けを無くす（MECE）。
     private static func summarize(_ data: [String: Any]) -> String {
         var parts: [String] = []
+
         if let serviceUUIDs = data[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] {
             parts.append("services: \(serviceUUIDs.map(\.uuidString).joined(separator: ", "))")
         }
+        else {
+            // この広告に Service UUIDs が含まれないだけ。広告は任意キーの集合なので欠落は正常。要約から省く。
+        }
+
         if let localName = data[CBAdvertisementDataLocalNameKey] as? String {
             parts.append("localName: \(localName)")
         }
+        else {
+            // ローカル名は未広告。スキャン応答側にのみ載る構成もあり、無くても異常ではない。省く。
+        }
+
         if let txPower = data[CBAdvertisementDataTxPowerLevelKey] as? NSNumber {
             parts.append("txPower: \(txPower)")
         }
+        else {
+            // TxPower レベルは任意。未広告なら距離推定に使えないだけで異常ではない。省く。
+        }
+
         if let isConnectable = data[CBAdvertisementDataIsConnectable] as? NSNumber {
             parts.append("connectable: \(isConnectable.boolValue)")
         }
+        else {
+            // 接続可否フラグを広告側が明示していない。false と断定せず「不明」として省く。
+        }
+
         return parts.isEmpty ? "(no data)" : parts.joined(separator: ", ")
     }
 
