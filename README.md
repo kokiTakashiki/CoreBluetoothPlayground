@@ -4,7 +4,7 @@ Core Bluetooth フレームワークの挙動を単独で確認するための i
 
 ## 目的
 
-本番アプリの構築ではなく、Core Bluetooth の各 API が**どのように振る舞うか**を実機で直接確認することを目的としています。Central 役の iOS 実機と、Peripheral 役の nRF52840 開発キット、そして USB ドングル + Wireshark による空中パケット観測の三者で検証を成立させます。
+Core Bluetooth の各 API が**どのように振る舞うか**を実機で直接確認することを目的としています。Central 役の iOS 実機と、Peripheral 役の nRF52840 開発キット、そして USB ドングル + Wireshark による空中パケット観測の三者で検証を成立させます。
 
 ## 構成
 
