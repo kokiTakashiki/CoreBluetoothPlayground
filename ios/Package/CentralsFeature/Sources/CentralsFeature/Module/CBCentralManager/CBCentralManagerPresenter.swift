@@ -103,7 +103,7 @@ final class CBCentralManagerPresenter: CBCentralManagerPresenterInput {
     // MARK: Private
 
     private func handleChange() {
-        let scanning = interactor.state == .poweredOn
+        let scanning = interactor.cbState() == .poweredOn
         view?.render(rows: makeRows(), scanning: scanning)
     }
 

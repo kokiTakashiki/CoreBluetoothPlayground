@@ -15,7 +15,6 @@ final class CBCentralScanInteractor: NSObject {
 
     // MARK: Properties
 
-    private(set) var state: CBManagerState = .unknown
     private(set) var discoveries: [Discovery] = []
     var onChange: (() -> Void)?
     var onLog: ((String) -> Void)?
@@ -33,6 +32,11 @@ final class CBCentralScanInteractor: NSObject {
 // MARK: - CBCentralManagerInteractorInput
 
 extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
+    /// 状態は保持せず、その都度 CBCentralManager に問い合わせて返す。
+    func cbState() -> CBManagerState {
+        centralManager.state
+    }
+
     func startScan(filterNUS: Bool, allowDuplicates: Bool) {
         guard centralManager.state == .poweredOn
         else {
@@ -91,7 +95,6 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
 
 extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        state = central.state
         let desc = centralStateDescription(for: central.state)
         log("📡 状態変化: \(desc)")
         onChange?()

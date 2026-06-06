@@ -13,8 +13,8 @@ protocol CBCentralManagerInteractorInput: AnyObject {
 
     // MARK: 読み取り
 
-    /// CBCentralManager の現在の状態
-    var state: CBManagerState { get }
+    /// CBCentralManager の現在の状態を返す。Interactor は状態を保持せず、その都度問い合わせて返す。
+    func cbState() -> CBManagerState
 
     /// スキャン中に発見した Discovery の一覧（identifier で重複排除済み）
     var discoveries: [Discovery] { get }
