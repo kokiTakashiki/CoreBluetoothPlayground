@@ -198,3 +198,31 @@
 - `CBCentralManagerPresenter`: `onStartTapped` / `onStopTapped` / `onViewDidDisappear` で `try` を do/catch で囲み、catch で `view?.render(errorMessage:)` を呼ぶ（`onViewDidDisappear` は元々スキャンしていない正常ケースでノイズになるので黙殺する）。
 - `CBCentralManagerViewInput` / `CBCentralManagerViewController`: `func render(errorMessage: String)` を追加。実装は `UIAlertController` で最小通知する。
 - delegate コールバック側 (`recordStateChange` / `record`) の helpers は今回触らない。これらは前提条件を隠していない（観察情報をログに載せるための別軸の議論）ため、本決定のスコープ外であり、別 PR で扱う。
+
+---
+
+### D-017: 動的 payload マクロ `@DynamicBLELog` を「切り札」として導入する
+
+**決定:** 引数値ごとに本文を変えたい場面（例: `CBManagerState` の値ごとに「状態変化 unknown」「状態変化 poweredOn」のようにメッセージを分岐させたいケース）に限って使う「切り札」として、`@DynamicBLELog` body マクロを新設する。`@BLELog`（D-015）は `message: String` 固定文を前提とする「不自由なマクロ」であり、こうした分岐は表現できない。新マクロは `source:` クロージャで `DynamicBLELogPayload`（`level` / `message` / `label` を一括で持つ Sendable 値型）を返し、マクロ展開時にクロージャを関数本文末尾で呼んで結果を `BLELogRuntime.log(...)` に橋渡しする。展開は `@BLELog` と同じ「結果捕捉版」（入れ子関数 `__blelogBody` 退避＋ do/catch ラップ）に揃え、`async` / `throws` / 戻り値あり・なし・`Void` のすべてで一貫した展開とする。
+
+**理由:** `CBCentralManagerDelegate.centralManagerDidUpdateState(_:)` のように戻り値を持てない Void 要件で、引数値（`CBManagerState`）の各 case ごとに観察文を変えたいケースが現れた。従来は `private func recordStateChange(_:) -> String` を `@discardableResult` で戻り値偽装して `@BLELog` の結末ログに横流ししていたが、これは戻り値の意味を歪める smell であり「1 メソッド = ログ 1 行」の規律と整合しない。回避策として「case ごとに `@BLELog` 付きの空ラッパメソッドを 8 個並べる」案も検討したが、空ラッパが量産されて可読性が落ちるため、`@BLELog` の不自由さを敢えて緩めた切り札マクロを 1 つだけ導入する方が綺麗に解決できると判断した。
+
+**採用したクロージャ受け渡しの設計（B 案：仮引数経由）:** 当初は A 案（字義スコープ＝クロージャ本体を関数本文末尾へ inline 展開して関数引数や `self` をレキシカルに見せる）を試みたが、Swift は属性引数のクロージャを attribute スコープで型検査するため、関数引数（`central`）や `self` をクロージャ本体から直接参照することができない（コンパイル時 `cannot find 'central' in scope`／`'self' cannot be used on type` で弾かれる）。これは Swift の言語仕様によるものでマクロ実装側からは回避できない。そこで B 案を採用し、クロージャに関数引数を**仮引数として宣言**させ、マクロ展開時に関数引数をその仮引数へ渡して呼び出す形にした（`{ (central: CBCentralManager) in switch central.state { … } }(central)` の形）。マクロ宣言は `source: (repeat each Arg) -> DynamicBLELogPayload` の variadic generics で関数の引数数・型に汎用化する。
+
+**失敗時の payload:** throws の catch 経路では `source:` クロージャを意味的に評価できない（成功時の値を組み立てるための関数）。そこで失敗時は別経路の静的指定とし、`failureMessage: String? = nil` と `failureLabel: String = "BLELog"` を属性引数で受ける。`failureMessage` 未指定なら `失敗(<error>)` のみ、指定があれば `<failureMessage> → 失敗(<error>)` を `.error` レベルで記録する。`failureLabel` の既定値 `"BLELog"` は、失敗時にどの label が一番目立つべきかが文脈依存であり、フォールバック値を一意に決められないため、診断容易性を優先して中立的なリテラルにした（本物の運用では呼び出し側が明示指定することを推奨）。
+
+**戻り値ありメソッドへの適用:** 戻り値は payload クロージャからは見えない（クロージャは関数引数のみを仮引数として受ける）。これは将来要件としての保留事項であり、本マクロでは設計外。
+
+**濫用への抑止:** 切り札は規律の例外であり、安易に使うと「1 メソッド = ログ 1 行」の不自由さが崩れる。マクロ自体は誤用を防げないため、抑止は doc・本意思決定ログ・PR レビューの 3 段で行う。原則は「まず `@BLELog` で表現できないか試す。表現できない（引数値で本文を変えたい・Void で結末を語りたい）場合のみ `@DynamicBLELog` を使う」とする。
+
+**影響:**
+- `CBPlaygroundLogging/Sources/CBPlaygroundLogging/DynamicBLELog.swift`: 新規。`@attached(body)` マクロ宣言（variadic generics で関数の引数列に汎用化）。
+- `CBPlaygroundLogging/Sources/CBPlaygroundLogging/DynamicBLELogPayload.swift`: 新規。Sendable 値型。
+- `CBPlaygroundLogging/Sources/CBPlaygroundLoggingMacros/DynamicBLELogMacro.swift`: 新規。BodyMacro 実装。`@BLELog` と同じ「結果捕捉版」展開を踏襲。
+- `CBPlaygroundLogging/Sources/CBPlaygroundLoggingMacros/DynamicBLELogArguments.swift`: 新規。属性引数のパーサ（`failureMessage` / `failureLabel` / `source` クロージャ式の抽出）。
+- `CBPlaygroundLogging/Sources/CBPlaygroundLoggingMacros/BLELogDiagnostic.swift`: `missingSource` 診断を追加。
+- `CBPlaygroundLogging/Sources/CBPlaygroundLoggingMacros/Plugin.swift`: `DynamicBLELogMacro` を `providingMacros` に追加。
+- `CBPlaygroundLogging/Tests/CBPlaygroundLoggingTests/DynamicBLELogMacroTests.swift`: 新規ユニットテスト（非 throws Void／throws Void（`failureMessage` あり・なし）／async Void／戻り値あり・非 throws の各パターン）。
+- `CentralsFeature/Sources/CentralsFeature/Interactor/CBCentralScanInteractor.swift`: `private func recordStateChange(_:) -> String`（`@discardableResult` 付き）と `private func centralStateDescription(for:)` を撤去し、`centralManagerDidUpdateState(_:)` に `@DynamicBLELog` を直接付与。`@discardableResult` は本ファイルから全廃。
+
+**D-015 との関係:** 本決定は D-015（`@BLELog` の規律）を否定するものではなく、補完するもの。`@BLELog` は引き続き既定であり、「不自由なマクロ」で 1 メソッド 1 ログを強制する。`@DynamicBLELog` はその不自由さで表現できない場面の切り札に限る。
