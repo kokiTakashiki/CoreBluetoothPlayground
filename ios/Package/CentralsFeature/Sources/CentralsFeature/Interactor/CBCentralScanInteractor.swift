@@ -75,10 +75,32 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
 // MARK: - CBCentralManagerDelegate
 
 extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
-    /// CBCentralManagerDelegate の要件であり戻り値は持てない。ログと状態の解釈は `@BLELog` を付けた
-    /// `recordStateChange(_:)` に委ね、このメソッド自体はログを持たない（1 メソッド 1 ログの原則を守る）。
+    /// CBCentralManagerDelegate の要件であり戻り値は持てない。`CBManagerState` の値ごとに本文を変えたい
+    /// ため `@BLELog` の固定文では表現できず、切り札の `@DynamicBLELog` を使う。`source:` クロージャは
+    /// 関数引数を仮引数として受け取り、マクロ展開時に関数引数を渡して呼び出される。
+    @DynamicBLELog(source: { (central: CBCentralManager) in
+        switch central.state {
+        case .unknown:
+            return DynamicBLELogPayload(level: .info, message: "状態変化 unknown", label: "CBCentralManager")
+        case .resetting:
+            return DynamicBLELogPayload(level: .info, message: "状態変化 resetting", label: "CBCentralManager")
+        case .unsupported:
+            return DynamicBLELogPayload(level: .info, message: "状態変化 unsupported", label: "CBCentralManager")
+        case .unauthorized:
+            return DynamicBLELogPayload(level: .info, message: "状態変化 unauthorized", label: "CBCentralManager")
+        case .poweredOff:
+            return DynamicBLELogPayload(level: .info, message: "状態変化 poweredOff", label: "CBCentralManager")
+        case .poweredOn:
+            return DynamicBLELogPayload(level: .info, message: "状態変化 poweredOn", label: "CBCentralManager")
+        @unknown default:
+            return DynamicBLELogPayload(
+                level: .info,
+                message: "状態変化 unknown(\(central.state.rawValue))",
+                label: "CBCentralManager"
+            )
+        }
+    })
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        recordStateChange(central.state)
         onChange?()
     }
 
@@ -100,13 +122,6 @@ extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
         onChange?()
     }
 
-    /// 状態変化を解釈して結末文字列を返す。`@BLELog` が exit で 1 行記録する。
-    @discardableResult
-    @BLELog(message: "状態変化", label: "CBCentralManager")
-    private func recordStateChange(_ state: CBManagerState) -> String {
-        centralStateDescription(for: state)
-    }
-
     /// 既知 identifier の再広告を反映する。観察上は「同じデバイスが再び見えた」イベントで、追加とは
     /// 区別したい（広告周期や RSSI の揺れを見る軸）。`@BLELog` の message で「再広告」を明示する。
     @BLELog(message: "発見(再広告)", label: "CBCentralManager")
@@ -118,17 +133,5 @@ extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
     @BLELog(message: "発見(新規)", label: "CBCentralManager")
     private func recordAdded(_ discovery: Discovery) {
         discovered.append(discovery)
-    }
-
-    private func centralStateDescription(for state: CBManagerState) -> String {
-        switch state {
-        case .unknown: "unknown"
-        case .resetting: "resetting"
-        case .unsupported: "unsupported"
-        case .unauthorized: "unauthorized"
-        case .poweredOff: "poweredOff"
-        case .poweredOn: "poweredOn"
-        @unknown default: "unknown(\(state.rawValue))"
-        }
     }
 }
