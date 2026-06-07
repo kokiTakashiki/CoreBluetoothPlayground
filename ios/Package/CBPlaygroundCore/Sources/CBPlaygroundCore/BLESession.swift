@@ -21,47 +21,6 @@ public enum BLESessionError: Error {
     case alreadyInProgress
 }
 
-// MARK: - 探索結果キャリア（@unchecked Sendable）
-
-//
-// なぜキャリアが要るか（コンパイラの事実）:
-// CheckedContinuation.resume(returning:) / AsyncStream.Continuation.yield(_:) は
-// 引数を `sending` で受け取る。delegate コールバックで読み出す
-// peripheral.services / service.characteristics / characteristic.descriptors は
-// いずれも @MainActor 隔離の peripheral 由来であり、コンパイラは「main actor-isolated
-// 値を sending 境界へ渡している（呼び先での使用が後続の main actor 使用と競合しうる）」と
-// 判定する（実測診断: "main actor-isolated 'services' is passed as a 'sending' parameter"）。
-// CBService 等は Sendable 非準拠のため disconnected region にはならず、bare 値では通らない。
-//
-// 不変条件: これらキャリアが運ぶ値は CBCentralManager(queue: .main) 経由で
-// 必ず @MainActor 上でのみ生成・consume され、スレッドを跨がない。よって @unchecked Sendable は安全。
-// 旧 `SendableBox<Value>` 汎用ボックスは廃し、運ぶ CoreBluetooth 型ごとに用途を限定した
-// 文書化済みキャリアへ置き換えた（型システムが満足しないことを実測で確認済み）。
-//
-// 除去計画: defaultIsolation(MainActor) / NonisolatedNonsendingByDefault（approachable
-// concurrency）導入時に、これらキャリアと `Discovery` の @unchecked を併せて見直し・除去する。
-
-private struct ServicesResult: @unchecked Sendable {
-    let value: [CBService]
-}
-
-private struct CharacteristicsResult: @unchecked Sendable {
-    let value: [CBCharacteristic]
-}
-
-private struct DescriptorsResult: @unchecked Sendable {
-    let value: [CBDescriptor]
-}
-
-// disconnectionEvents の公開型は AsyncStream<CBPeripheral> 固定（API 制約）。
-// CBPeripheral を Element に直接置くと yield(_:) の `sending` を満たせない
-// （didDisconnectPeripheral の peripheral は @MainActor 隔離で disconnected region でない）。
-// そこで内部ストリームの Element をこの文書化済みキャリアにし、公開側で .peripheral へ展開する。
-
-private struct DisconnectionEvent: @unchecked Sendable {
-    let peripheral: CBPeripheral
-}
-
 // MARK: - BLESession
 
 /// CoreBluetooth の async/await 薄いラッパ。
@@ -83,11 +42,15 @@ public final class BLESession: NSObject {
 
     // MARK: Properties
 
+    /// 発見イベントを配る Main Actor 同期コールバック。Interactor が設定する。
+    public var onDiscovery: ((Discovery) -> Void)?
+
     private var centralManager: CBCentralManager!
 
     // MARK: Scan
 
-    private var scanContinuation: AsyncStream<Discovery>.Continuation?
+    /// スキャン中かどうか。発見コールバックを配るかどうかの判定に使う。
+    private var isScanning = false
 
     // MARK: waitUntilPoweredOn
 
@@ -100,24 +63,18 @@ public final class BLESession: NSObject {
 
     // MARK: discoverServices
 
-    /// peripheral.identifier → continuation
-    private var discoverServicesContinuations: [UUID: CheckedContinuation<ServicesResult, Error>] = [:]
+    /// peripheral.identifier → continuation（制御フローのみを載せ、結果は Main Actor 側で読み戻す）
+    private var discoverServicesContinuations: [UUID: CheckedContinuation<Void, Error>] = [:]
 
     // MARK: discoverCharacteristics
 
     /// service.uuid → continuation
-    private var discoverCharacteristicsContinuations:
-        [CBUUID: CheckedContinuation<CharacteristicsResult, Error>] = [:]
+    private var discoverCharacteristicsContinuations: [CBUUID: CheckedContinuation<Void, Error>] = [:]
 
     // MARK: discoverDescriptors
 
     /// characteristic.uuid → continuation
-    private var discoverDescriptorsContinuations:
-        [CBUUID: CheckedContinuation<DescriptorsResult, Error>] = [:]
-
-    // MARK: disconnectionEvents
-
-    private var disconnectionEventsContinuation: AsyncStream<DisconnectionEvent>.Continuation?
+    private var discoverDescriptorsContinuations: [CBUUID: CheckedContinuation<Void, Error>] = [:]
 
     // MARK: Retained peripherals
 
@@ -151,40 +108,20 @@ public final class BLESession: NSObject {
         }
     }
 
-    /// BLE スキャンを開始し、発見イベントを流す AsyncStream を返す。
-    /// `stopScan()` が呼ばれると stream が finish する。
-    public func startScan(serviceUUIDs: [CBUUID]?, allowDuplicates: Bool) -> AsyncStream<Discovery> {
-        // 前回の stream が残っていれば finish する
-        scanContinuation?.finish()
-        scanContinuation = nil
-
-        let stream = AsyncStream<Discovery> { [weak self] continuation in
-            guard let self else {
-                continuation.finish()
-                return
-            }
-            scanContinuation = continuation
-            continuation.onTermination = { [weak self] _ in
-                // stream が外側からキャンセルされた場合もスキャン停止
-                Task { @MainActor in
-                    self?.centralManager.stopScan()
-                    self?.scanContinuation = nil
-                }
-            }
-        }
-
+    /// BLE スキャンを開始する。発見イベントは `onDiscovery` クロージャ（Main Actor 同期）で配る。
+    /// 非 Sendable な CBPeripheral を含む `Discovery` を隔離境界へ載せないため、AsyncStream ではなく
+    /// 同一アクター内の同期コールバックで渡す。`stopScan()` で配送を止める。
+    public func startScan(serviceUUIDs: [CBUUID]?, allowDuplicates: Bool) {
+        isScanning = true
         let options: [String: Any] = [CBCentralManagerScanOptionAllowDuplicatesKey: allowDuplicates]
         centralManager.scanForPeripherals(withServices: serviceUUIDs, options: options)
         log("スキャン開始 serviceUUIDs=\(serviceUUIDs?.map(\.uuidString) ?? ["nil"]) allowDuplicates=\(allowDuplicates)")
-
-        return stream
     }
 
-    /// スキャンを停止し、startScan で返した stream を finish させる。
+    /// スキャンを停止し、発見コールバックの配送を止める。
     public func stopScan() {
+        isScanning = false
         centralManager.stopScan()
-        scanContinuation?.finish()
-        scanContinuation = nil
         log("スキャン停止")
     }
 
@@ -216,12 +153,12 @@ public final class BLESession: NSObject {
         }
         peripheral.delegate = self
         log("サービス探索開始: \(peripheral.name ?? "(no name)")")
-        let result = try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<ServicesResult, Error>) in
+        // continuation には制御フロー（Void/Error）のみ載せ、結果は復帰後に Main Actor 上で読み戻す。
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             discoverServicesContinuations[identifier] = continuation
             peripheral.discoverServices(serviceUUIDs)
         }
-        return result.value
+        return peripheral.services ?? []
     }
 
     /// キャラクタリスティックを探索する。
@@ -236,12 +173,11 @@ public final class BLESession: NSObject {
         }
         peripheral.delegate = self
         log("キャラクタリスティック探索開始: service=\(service.uuid.uuidString.prefix(8))…")
-        let result = try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<CharacteristicsResult, Error>) in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             discoverCharacteristicsContinuations[key] = continuation
             peripheral.discoverCharacteristics(characteristicUUIDs, for: service)
         }
-        return result.value
+        return service.characteristics ?? []
     }
 
     /// 記述子を探索する。
@@ -255,31 +191,11 @@ public final class BLESession: NSObject {
         }
         peripheral.delegate = self
         log("記述子探索開始: characteristic=\(characteristic.uuid.uuidString.prefix(8))…")
-        let result = try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<DescriptorsResult, Error>) in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             discoverDescriptorsContinuations[key] = continuation
             peripheral.discoverDescriptors(for: characteristic)
         }
-        return result.value
-    }
-
-    /// ペリフェラルの切断イベントを流す AsyncStream（非要求イベント）。
-    /// 呼び出し側がイテレートすることで didDisconnect を受け取れる。
-    public func disconnectionEvents() -> AsyncStream<CBPeripheral> {
-        // 既存の stream を差し替える
-        disconnectionEventsContinuation?.finish()
-        // 内部は DisconnectionEvent（文書化済み @unchecked Sendable）を流し、公開境界で
-        // .peripheral へ展開する。yield/消費はいずれも @MainActor 上で完結する。
-        let (innerStream, innerContinuation) = AsyncStream<DisconnectionEvent>.makeStream()
-        disconnectionEventsContinuation = innerContinuation
-        return AsyncStream<CBPeripheral> { continuation in
-            Task {
-                for await event in innerStream {
-                    continuation.yield(event.peripheral)
-                }
-                continuation.finish()
-            }
-        }
+        return characteristic.descriptors ?? []
     }
 
     // MARK: Private
@@ -305,9 +221,8 @@ extension BLESession: @preconcurrency CBCentralManagerDelegate {
             }
         }
         else {
-            // poweredOn でなくなった場合はスキャン stream を終了させる
-            scanContinuation?.finish()
-            scanContinuation = nil
+            // poweredOn でなくなった場合は発見コールバックの配送を止める
+            isScanning = false
         }
     }
 
@@ -317,8 +232,13 @@ extension BLESession: @preconcurrency CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
+        guard isScanning else {
+            // スキャン停止後・poweredOn でない時に届いたコールバックは無視（MECE: 配送対象外）
+            return
+        }
         let discovery = Discovery(peripheral: peripheral, advertisementData: advertisementData, rssi: RSSI)
-        scanContinuation?.yield(discovery)
+        // 同一アクター（Main）内の同期呼び出し。隔離境界を跨がないので Discovery は Sendable 不要。
+        onDiscovery?(discovery)
         log("発見: \(peripheral.name ?? "(no name)") [\(peripheral.identifier.uuidString.prefix(8))…] RSSI=\(RSSI)")
     }
 
@@ -361,7 +281,6 @@ extension BLESession: @preconcurrency CBCentralManagerDelegate {
             "切断: \(peripheral.name ?? "(no name)") [\(identifier.uuidString.prefix(8))…] error=\(error?.localizedDescription ?? "nil")"
         )
         retainedPeripherals[identifier] = nil
-        disconnectionEventsContinuation?.yield(DisconnectionEvent(peripheral: peripheral))
 
         // 探索系 continuation が待機中の場合（切断による強制終了）
         if let continuation = discoverServicesContinuations[identifier] {
@@ -391,9 +310,9 @@ extension BLESession: @preconcurrency CBPeripheralDelegate {
             continuation.resume(throwing: error)
         }
         else {
-            let services = peripheral.services ?? []
-            log("サービス探索完了: \(services.count) 件")
-            continuation.resume(returning: ServicesResult(value: services))
+            // 非 Sendable な services は continuation に載せず、復帰後に Main Actor 側で読み戻す。
+            log("サービス探索完了: \((peripheral.services ?? []).count) 件")
+            continuation.resume()
         }
     }
 
@@ -414,9 +333,8 @@ extension BLESession: @preconcurrency CBPeripheralDelegate {
             continuation.resume(throwing: error)
         }
         else {
-            let characteristics = service.characteristics ?? []
-            log("キャラクタリスティック探索完了: service=\(key.uuidString.prefix(8))… \(characteristics.count) 件")
-            continuation.resume(returning: CharacteristicsResult(value: characteristics))
+            log("キャラクタリスティック探索完了: service=\(key.uuidString.prefix(8))… \((service.characteristics ?? []).count) 件")
+            continuation.resume()
         }
     }
 
@@ -437,9 +355,8 @@ extension BLESession: @preconcurrency CBPeripheralDelegate {
             continuation.resume(throwing: error)
         }
         else {
-            let descriptors = characteristic.descriptors ?? []
-            log("記述子探索完了: characteristic=\(key.uuidString.prefix(8))… \(descriptors.count) 件")
-            continuation.resume(returning: DescriptorsResult(value: descriptors))
+            log("記述子探索完了: characteristic=\(key.uuidString.prefix(8))… \((characteristic.descriptors ?? []).count) 件")
+            continuation.resume()
         }
     }
 }

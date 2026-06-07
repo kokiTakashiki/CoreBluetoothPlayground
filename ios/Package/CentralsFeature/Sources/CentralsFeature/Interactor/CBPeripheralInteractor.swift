@@ -25,8 +25,6 @@ final class CBPeripheralInteractor {
 
     private let session: BLESession
 
-    private var scanTask: Task<Void, Never>?
-
     // MARK: Lifecycle
 
     init(session: BLESession) {
@@ -36,6 +34,25 @@ final class CBPeripheralInteractor {
     // MARK: Functions
 
     // MARK: Private
+
+    /// 1 件の発見を蓄積に反映する（同一 identifier は更新、新規は追記）。
+    private func handleDiscovery(_ discovery: Discovery) {
+        let peripheral = discovery.peripheral
+        let name = peripheral.name ?? "(no name)"
+        let identifierPrefix = peripheral.identifier.uuidString.prefix(8)
+
+        if let index = discovered.firstIndex(where: {
+            $0.peripheral.identifier == peripheral.identifier
+        }) {
+            discovered[index] = discovery
+            log("↻ 更新: \(name) [\(identifierPrefix)…] RSSI=\(discovery.rssi)")
+        }
+        else {
+            discovered.append(discovery)
+            log("✚ 発見: \(name) [\(identifierPrefix)…] RSSI=\(discovery.rssi)")
+        }
+        onChange?()
+    }
 
     private func log(_ message: String) {
         BLELog.log(Self.logLabel, message)
@@ -59,36 +76,16 @@ extension CBPeripheralInteractor: CBPeripheralInteractorInput {
         discovered = []
         onChange?()
 
-        scanTask?.cancel()
         log("🔍 スキャン開始 [NUS フィルタ ON]")
-        let stream = session.startScan(serviceUUIDs: [BLEConstants.nusService], allowDuplicates: false)
-        scanTask = Task { [weak self] in
-            for await discovery in stream {
-                guard let self else {
-                    return
-                }
-                let peripheral = discovery.peripheral
-                let name = peripheral.name ?? "(no name)"
-                let identifierPrefix = peripheral.identifier.uuidString.prefix(8)
-
-                if let index = discovered.firstIndex(where: {
-                    $0.peripheral.identifier == peripheral.identifier
-                }) {
-                    discovered[index] = discovery
-                    log("↻ 更新: \(name) [\(identifierPrefix)…] RSSI=\(discovery.rssi)")
-                }
-                else {
-                    discovered.append(discovery)
-                    log("✚ 発見: \(name) [\(identifierPrefix)…] RSSI=\(discovery.rssi)")
-                }
-                onChange?()
-            }
+        // 発見は Main Actor 同期コールバックで受け取り、ここで蓄積する。
+        session.onDiscovery = { [weak self] discovery in
+            self?.handleDiscovery(discovery)
         }
+        session.startScan(serviceUUIDs: [BLEConstants.nusService], allowDuplicates: false)
     }
 
     func stopScan() {
-        scanTask?.cancel()
-        scanTask = nil
+        session.onDiscovery = nil
         session.stopScan()
         log("⏹ スキャン停止 (発見数: \(discovered.count))")
     }
