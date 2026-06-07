@@ -12,7 +12,7 @@ VERBOSE ?=
 SIM_NO_SIGN := CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
 
 .PHONY: help setup _bootstrap-ios _require-submodule upgrade \
-        ios-project ios-build ios-format ios-format-check ios-test \
+        ios-project ios-build ios-format ios-format-check ios-test macro-test \
         flash-normal flash-anomaly capture-start capture-stop \
         verify run-sample collect list-samples clean clean-captures reset
 
@@ -36,10 +36,13 @@ ios-project: ## project.yml から .xcodeproj を生成する（XcodeGen）
 	cd $(IOS_DIR) && mint run yonaskolb/XcodeGen xcodegen generate
 
 ios-build: ios-project ## シミュレータ向けにビルドする（署名なし）
+	# -sdk iphonesimulator は付けない。これを付けると Swift Macro のコンパイラプラグイン
+	# （CBPlaygroundLoggingMacros）までシミュレータ SDK でビルドされ、ホストで実行できず
+	# 「produced malformed response」となる。-destination だけ指定し、プラグインはホスト
+	# （macOS）向けに、アプリ本体はシミュレータ向けにビルドさせる。
 	cd $(IOS_DIR) && xcodebuild \
 		-project CoreBluetoothPlayground.xcodeproj \
 		-scheme CoreBluetoothPlayground \
-		-sdk iphonesimulator \
 		-destination 'generic/platform=iOS Simulator' \
 		build $(SIM_NO_SIGN)
 
@@ -49,7 +52,7 @@ ios-format: ## Swift ソースを整形する（SwiftFormat）
 ios-format-check: ## 整形差分を検査する（書き込みなし、--lint モード）
 	cd $(IOS_DIR) && mint run nicklockwood/SwiftFormat swiftformat --lint .
 
-ios-test: ios-project ## シミュレータでテストを実行する（利用可能な最新 iPhone を自動選択）
+ios-test: ios-project macro-test ## シミュレータでテストを実行する（利用可能な最新 iPhone を自動選択）+ マクロ展開テスト
 	@SIM=$$(xcrun simctl list devices available 2>/dev/null | grep -Eo 'iPhone [0-9]+' | sort -V | tail -1); \
 	test -n "$$SIM" || { echo "→ 利用可能な iPhone シミュレータが見つかりません"; exit 1; }; \
 	echo "→ テスト実行先: $$SIM"; \
@@ -58,6 +61,11 @@ ios-test: ios-project ## シミュレータでテストを実行する（利用�
 		-scheme CoreBluetoothPlayground \
 		-destination "platform=iOS Simulator,name=$$SIM" \
 		test $(SIM_NO_SIGN)
+
+macro-test: ## マクロ展開ユニットテストを実行する（ホスト macOS 上で swift test）
+	# Swift Macro の展開はホスト（macOS）上でしか実行できないため、iOS シミュレータの
+	# テストスキームには載せず、SwiftPM で直接 swift test する。
+	cd $(IOS_DIR)/Package/CBPlaygroundLogging && swift test
 
 flash-normal: _require-submodule ## 正常系 peripheral_uart を nRF52840 DK に書き込む
 	$(MAKE) -C $(SUBMODULE_DIR) flash-dk BOARD=$(BOARD) SERIAL_PORT=$(SERIAL_PORT)

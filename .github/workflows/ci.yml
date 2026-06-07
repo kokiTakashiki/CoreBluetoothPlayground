@@ -115,6 +115,23 @@ jobs:
       - name: Run unit tests (xcodegen + xcodebuild test)
         run: make ios-test
 
+  macro-test:
+    # Swift Macro の展開はホスト（macOS）上でしか実行できないため、iOS シミュレータの
+    # テストスキームとは別ジョブとして swift test で機械ゲート化する。swift-syntax の
+    # ビルドを伴うため macos-15 + 最新安定 Xcode（Swift 6）を使う。
+    name: Macro Expansion Test (Host)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+
+      - name: Run macro expansion unit tests (swift test)
+        run: make macro-test
+
   swiftformat-lint:
     name: SwiftFormat Lint
     runs-on: macos-14

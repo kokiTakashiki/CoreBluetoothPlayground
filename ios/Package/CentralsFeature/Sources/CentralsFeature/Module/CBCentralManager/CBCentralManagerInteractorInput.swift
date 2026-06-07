@@ -26,12 +26,14 @@ protocol CBCentralManagerInteractorInput: AnyObject {
 
     // MARK: 操作
 
-    /// スキャンを開始する
+    /// スキャンを開始する。前提条件として CBCentralManager の state が .poweredOn でなければならず、
+    /// 違反は `CBCentralManagerError.notPoweredOn` を throws して呼び出し側へ伝える。Void + guard + silent
+    /// return では関数が走ったかどうかを呼び出し側が区別できないため、契約を throws で型に出している。
     /// - Parameters:
     ///   - filterNUS: true の場合 NUS サービス UUID でフィルタリングする
     ///   - allowDuplicates: true の場合重複した発見を許可する
-    func startScan(filterNUS: Bool, allowDuplicates: Bool)
+    func startScan(filterNUS: Bool, allowDuplicates: Bool) throws
 
-    /// スキャンを停止する
-    func stopScan()
+    /// スキャンを停止する。スキャン中でない場合は `CBCentralManagerError.notScanning` を throws する。
+    func stopScan() throws
 }

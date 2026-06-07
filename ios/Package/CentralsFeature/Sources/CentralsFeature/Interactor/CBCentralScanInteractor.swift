@@ -4,18 +4,16 @@
 //
 
 import CBPlaygroundCore
+import CBPlaygroundLogging
 import CoreBluetooth
 import Foundation
 
 /// スキャン専用の CBCentralManager 具象 Interactor。
 /// `CBCentralManagerInteractorInput` を実装し、CBCentralManagerDelegate を処理する。
-/// CBCentralManager は queue: .main で初期化するため、デリゲートコールバックはメインスレッドで到達する。
+/// CBCentralManager を `queue: .main` で初期化するため、デリゲートコールバックはメインスレッドで到達する
+/// （`@MainActor` 隔離と矛盾しない）。
 @MainActor
 final class CBCentralScanInteractor: NSObject {
-
-    // MARK: Static Properties
-
-    private static let logLabel = "CBCentralManager"
 
     // MARK: Properties
 
@@ -48,68 +46,56 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
         discovered
     }
 
-    func startScan(filterNUS: Bool, allowDuplicates: Bool) {
+    /// スキャンを開始する。`state == .poweredOn` でない場合は `CBCentralManagerError.notPoweredOn` を
+    /// throws する。
+    @BLELog(message: "スキャン開始", label: "CBCentralManager")
+    func startScan(filterNUS: Bool, allowDuplicates: Bool) throws {
         guard centralManager.state == .poweredOn
         else {
-            let reason = stateDescription(for: centralManager.state)
-            log("⚠️ スキャン開始できません: \(reason)")
-            return
+            throw CBCentralManagerError.notPoweredOn(centralManager.state)
         }
-
         discovered = []
         onChange?()
-
         let serviceUUIDs: [CBUUID]? = filterNUS ? [BLEConstants.nusService] : nil
         let options: [String: Any] = [CBCentralManagerScanOptionAllowDuplicatesKey: allowDuplicates]
         centralManager.scanForPeripherals(withServices: serviceUUIDs, options: options)
-
-        let filterDescription = filterNUS ? "NUS フィルタ ON" : "フィルタなし"
-        let duplicatesDescription = allowDuplicates ? "重複許可 ON" : "重複許可 OFF"
-        log("🔍 スキャン開始 [\(filterDescription), \(duplicatesDescription)]")
     }
 
-    func stopScan() {
+    /// スキャンを停止する。スキャン中でない場合は `CBCentralManagerError.notScanning` を throws する。
+    @BLELog(message: "スキャン停止", label: "CBCentralManager")
+    func stopScan() throws {
         guard centralManager.isScanning
         else {
-            return
+            throw CBCentralManagerError.notScanning
         }
         centralManager.stopScan()
-        log("⏹ スキャン停止 (発見数: \(discovered.count))")
-    }
-
-    // MARK: Private
-
-    private func log(_ message: String) {
-        BLELog.log(Self.logLabel, message)
-    }
-
-    private func stateDescription(for state: CBManagerState) -> String {
-        switch state {
-        case .poweredOff:
-            "Bluetooth がオフです"
-        case .unauthorized:
-            "Bluetooth の使用が許可されていません"
-        case .unsupported:
-            "Bluetooth Low Energy がサポートされていません"
-        case .resetting:
-            "Bluetooth をリセット中です"
-        case .unknown:
-            "Bluetooth の状態が不明です"
-        default:
-            "Bluetooth が利用できません (state=\(state.rawValue))"
-        }
     }
 }
 
 // MARK: - CBCentralManagerDelegate
 
 extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
+    /// CBCentralManagerDelegate の要件であり戻り値は持てない。`CBManagerState` の値ごとに本文を変えたい
+    /// ため `@BLELog` の固定文では表現できず、切り札の `@DynamicBLELog` を使う。`source:` クロージャは
+    /// 関数引数を仮引数として受け取り、マクロ展開時に関数引数を渡して呼び出される。
+    @DynamicBLELog(source: { (central: CBCentralManager) in
+        let message = switch central.state {
+        case .unknown: "状態変化 unknown"
+        case .resetting: "状態変化 resetting"
+        case .unsupported: "状態変化 unsupported"
+        case .unauthorized: "状態変化 unauthorized"
+        case .poweredOff: "状態変化 poweredOff"
+        case .poweredOn: "状態変化 poweredOn"
+        @unknown default: "状態変化 unknown(\(central.state.rawValue))"
+        }
+        return DynamicBLELogPayload(level: .info, message: message, label: "CBCentralManager")
+    })
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        let description = centralStateDescription(for: central.state)
-        log("📡 状態変化: \(description)")
         onChange?()
     }
 
+    /// CBCentralManagerDelegate の要件であり戻り値は持てない。新規発見か既知デバイスの再広告かで
+    /// 観察上の意味が違うため、ここで分岐して別々の `@BLELog` メソッドへ振り分ける。
     func centralManager(
         _ central: CBCentralManager,
         didDiscover peripheral: CBPeripheral,
@@ -117,29 +103,25 @@ extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
         rssi RSSI: NSNumber
     ) {
         let discovery = Discovery(peripheral: peripheral, advertisementData: advertisementData, rssi: RSSI)
-        let name = peripheral.name ?? "(no name)"
-        let identifierPrefix = peripheral.identifier.uuidString.prefix(8)
-
         if let index = discovered.firstIndex(where: { $0.peripheral.identifier == peripheral.identifier }) {
-            discovered[index] = discovery
-            log("↻ 更新: \(name) [\(identifierPrefix)…] RSSI=\(RSSI)")
+            recordUpdated(discovery, at: index)
         }
         else {
-            discovered.append(discovery)
-            log("✚ 発見: \(name) [\(identifierPrefix)…] RSSI=\(RSSI)")
+            recordAdded(discovery)
         }
         onChange?()
     }
 
-    private func centralStateDescription(for state: CBManagerState) -> String {
-        switch state {
-        case .unknown: "unknown"
-        case .resetting: "resetting"
-        case .unsupported: "unsupported"
-        case .unauthorized: "unauthorized"
-        case .poweredOff: "poweredOff"
-        case .poweredOn: "poweredOn"
-        @unknown default: "unknown(\(state.rawValue))"
-        }
+    /// 既知 identifier の再広告を反映する。観察上は「同じデバイスが再び見えた」イベントで、追加とは
+    /// 区別したい（広告周期や RSSI の揺れを見る軸）。`@BLELog` の message で「再広告」を明示する。
+    @BLELog(message: "発見(再広告)", label: "CBCentralManager")
+    private func recordUpdated(_ discovery: Discovery, at index: Int) {
+        discovered[index] = discovery
+    }
+
+    /// 未知 identifier の発見を蓄積に追加する。`@BLELog` の message で「新規」を明示する。
+    @BLELog(message: "発見(新規)", label: "CBCentralManager")
+    private func recordAdded(_ discovery: Discovery) {
+        discovered.append(discovery)
     }
 }

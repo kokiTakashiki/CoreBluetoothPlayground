@@ -150,3 +150,79 @@
 - `CBCentralManagerViewController` / `CBCentralManagerViewInput`: `logTextView`・`appendLog(_:)` 削除、ナビバー右に「Logs」ボタン追加（`CBLogConsole.makeViewController(label: "CBCentralManager")` を present）。
 - `TopicListViewController`: `CBPlaygroundConsole` import、ナビバー右に「Logs」ボタン追加（全件表示）。
 - `ios/project.yml`: `CBPlaygroundConsole` をローカルパッケージに追加、app target 依存に追加。
+
+---
+
+### D-015: ログ取得を `@BLELog` body マクロに一本化し、ログの取り方を規律で縛る
+
+**決定:** ログ取得を Swift Macro（`@attached(body)` の `@BLELog`）へ一本化する。各型に重複していた `private static let logLabel` と `private func log(_:)`、および散在する `BLELog.log(...)` 直書きを廃止し、ログは `@BLELog` を付けたメソッドの脱出（exit）でちょうど 1 行だけ出す形に集約する。マクロ実装は新設の SwiftPM パッケージ `CBPlaygroundLogging`（`.macro` 実装ターゲット `CBPlaygroundLoggingMacros` + 公開ライブラリ `CBPlaygroundLogging`）に置く。
+
+**命名方針（パッケージ名はドメインで名乗る）:** パッケージ名は「Swift Macros を集めたもの」のような実装手段ではなく、提供するドメイン（ログ機能）で名乗る。そのため公開パッケージ／公開ライブラリは `CBPlaygroundLogging` とし、実装手段の Swift Macros は内部ターゲット名 `CBPlaygroundLoggingMacros`（「Logging パッケージのマクロ実装」と読める形）へ追いやる。マクロ名そのもの（`BLELog` / `BLELogLevel` / `BLELogRuntime`）は `BLE` 接頭辞でドメインが十分明示できているため改名しない。
+
+**理由（最重要 = 設計思想）:** 狙いはボイラープレート削減ではなく、ログの取り方を規律で縛ること。ログは簡単に取れるからこそ取りすぎ・取らなすぎが起きる。そこでマクロの不自由さを使い「1 メソッド = ログ 1 行（exit で 1 回だけ）」を強制する。途中経過のログは書けないため、1 行で説明しきれないメソッドは責務過多のシグナルとみなせる。これにより、旧実装で分岐ごとに別々のログを出していた箇所（`startScan` の開始可否、`didDiscover` の更新/追加）は、結末を表す文字列を返すメソッドへ分割し、その単一の戻り値を結末として記録する形へ自然に矯正される。
+
+**マクロ展開仕様（既定 = 結果捕捉版）:** 元の本文を入れ子関数 `__blelogBody` へ退避し、その呼び出し結果を捕捉して exit で 1 行ログする。`throws` のときは do/catch で包み、成功・失敗の双方を 1 行にする。`async` / `throws` / 戻り値あり・なし・`Void` のすべてで一貫した展開になる（Void でも非 throws でも同形の「成功」ログを出す）。
+
+- メッセージ規約: `message` には動作を 1 行で表す固定文（補間なし）を渡し、展開時に末尾へ結末を自動付与する。成功・戻り値あり = `<message> → 成功(<戻り値>)`、成功・Void = `<message> → 成功`、失敗 = `<message> → 失敗(<error>)`（失敗は常に `.error`）。
+- `level` 省略時は `.info`。`BLELogLevel`（.debug/.info/.warning/.error）を新設し Pulse の `LoggerStore.Level` へマッピングする。旧来の絵文字接頭辞（🔍 ⏹ ↻ ✚ ⚠️ など）は廃止しレベル表示へ一本化する。
+- `label` 省略時は囲っている型名から自動採番する。BodyMacro の `expansion` で `context.lexicalContext` を内側から外側へ辿り、最初に見つかった型宣言（class / struct / enum / actor、extension は拡張対象型）の名前を label とする。明示指定も可能で、指定時はそれを優先する。型名が辿れない場合のフォールバックは "BLELog"。
+- **label の運用規約:** 本リポジトリの観察軸は Core Bluetooth のインターフェース名（"CBCentralManager"、"CBPeripheral"、"CBCharacteristic" …）であり、ConsoleView の Labels 絞り込みもこの軸で行う。実装者の型名（"CBCentralScanInteractor" 等）は採用しない。したがって Interactor 等の実装側では **インターフェース名を `label:` で明示する**ことを規約とし、自動採番は型名そのものが観察対象になっているとき（例: 後続増分で `BLESession` のように、型名と観察対象が一致するクラス内）にのみ用いる。
+
+**単純 defer 版との比較（採否の根拠）:** 「単純 defer 版（引数のみ参照・軽量）」は結末（戻り値・成功失敗）をログに残せず、観察対象（Core Bluetooth が何を返したか）を取りこぼす。本リポジトリの目的は挙動観察であり結末こそが重要なため、重さを承知で「結果捕捉版」を既定採用する。入れ子関数方式により全シグネチャで破綻なく展開でき、特定シグネチャの defer 版フォールバックは不要だった（事実に判定させた結果、フォールバック分岐は設けていない）。
+
+**縦切りで確認した統合リスク:**
+- **XcodeGen × macro plugin:** ローカル SwiftPM パッケージの `.macro` ターゲットは Xcode が SPM として解決し、macro プラグインはホスト（macOS）向けにビルドされる。
+- **`xcodebuild -sdk` の落とし穴（重要）:** `make ios-build` が付けていた `-sdk iphonesimulator` を指定すると、macro プラグインまでシミュレータ SDK でビルドされ、ホストで実行できず「external macro implementation … produced malformed response」となる。`-sdk` を外し `-destination 'generic/platform=iOS Simulator'` のみにすると、プラグインはホスト（macOS, platform 1）、アプリ本体はシミュレータ向けに正しく分かれてビルドされ解決する。
+- **swift-syntax のビルド時間増:** swift-syntax 602.0.0 のビルドを伴うぶん初回ビルドが重くなるのは織り込み済み。
+
+**影響:**
+- `ios/Package/CBPlaygroundLogging/`: 新規パッケージ。`.macro` ターゲット `CBPlaygroundLoggingMacros`（`BLELogMacro` / `BLELogArguments` / `BLELogDiagnostic` / `Plugin`）と公開ライブラリ `CBPlaygroundLogging`（`@BLELog` 宣言・`BLELogLevel`・ランタイム facade `BLELogRuntime`）。swift-syntax は D-008 準拠でコミット SHA `4799286537280063c85a32f09884cfbca301b1a1`（602.0.0）に固定。Pulse は既存と同一 SHA。
+- `CBPlaygroundCore`: 旧 `BLELog.swift`（Pulse facade）を削除。唯一の Pulse 利用者だったため `CBPlaygroundCore` の Pulse 依存も撤去。ログ facade は `CBPlaygroundLogging` の `BLELogRuntime` へ移管（D-014 の `BLELog.log(...)` 直通は `@BLELog` 経由へ置換）。
+- `CentralsFeature`: `CBPlaygroundLogging` 依存追加。`CBCentralScanInteractor` の `logLabel` / `log(_:)` を削除し、5 箇所のログを `@BLELog` 付きメソッドへ移行。`CBCentralManagerDelegate` 要件（戻り値を持てない）と `CBCentralManagerInteractorInput` 要件（Void）は薄い委譲メソッドにし、ログは結末文字列を返す private 本体メソッドへ寄せて 1 メソッド 1 ログを守る。
+- `ios/project.yml`: `CBPlaygroundLogging` をローカルパッケージに追加。
+- `Makefile`: `ios-build` から `-sdk iphonesimulator` を除去。`macro-test`（ホストで `swift test`）を追加し `ios-test` の依存に組み込む。
+- `.github/workflows/ci.yml`: macro 展開テストを機械ゲート化する `macro-test` ジョブ（macos-15 + 最新安定 Xcode）を追加。
+
+---
+
+### D-016: 前提条件のあるメソッドは Void で受けない（throws / async で契約を型に出す）
+
+**決定:** 前提条件のあるメソッドは Void で受けない。違反は throws で押し出し、待ちは async にする。`func foo() { guard cond else { return } ... }` の「Void + guard + silent return」は禁止する。`CBCentralManagerInteractorInput` の `startScan` / `stopScan` を `throws` 化し、違反は新設の `CBCentralManagerError`（`.notPoweredOn(CBManagerState)` / `.notScanning`）で表す。Presenter は do/catch で受け、View に `render(errorMessage:)` で伝える。
+
+**理由:** 黙って no-op する API は、呼び出し側からは関数が走ったか走らなかったか区別できない。本リポジトリでは隠れた前提条件を `performStartScan() -> String` + `@discardableResult` というパターンで「結末を戻り値で語る」形に偽装してログ payload として消費していたが、`@discardableResult` が必要になる時点で「これは本物の戻り値ではない」というシグナル（戻り値は呼び出し側のためではなく、マクロの結末ログのためだけに存在していた）。throws で押し出せば、(a) 契約が型として明示され、(b) View がエラーを表示でき、(c) `@BLELog` の catch ブランチが `→ 失敗(<error>)` で自動的にエラーログまで取れる、と一石三鳥になる。`@discardableResult` の嘘の宣言も不要になる。
+
+**影響範囲:**
+- `CentralsFeature/Module/CBCentralManager/CBCentralManagerError.swift`: 新設。`.notPoweredOn(CBManagerState)` と `.notScanning`、`LocalizedError` 準拠。旧 `CBCentralScanInteractor.stateDescription(for:)` の状態文言は DRY のため Error 側へ移植し、Interactor からは削除する。
+- `CBCentralManagerInteractorInput`: `startScan(filterNUS:allowDuplicates:) throws` / `stopScan() throws` に変更。`currentState()` / `discoveries()` は情報取得であり throws しない。
+- `CBCentralScanInteractor`: `performStartScan` / `performStopScan` 委譲メソッドを撤去し、`startScan` / `stopScan` 自体に `@BLELog` を付ける。`@discardableResult` は本ファイル内の該当箇所から全廃。
+- `CBCentralManagerPresenter`: `onStartTapped` / `onStopTapped` / `onViewDidDisappear` で `try` を do/catch で囲み、catch で `view?.render(errorMessage:)` を呼ぶ（`onViewDidDisappear` は元々スキャンしていない正常ケースでノイズになるので黙殺する）。
+- `CBCentralManagerViewInput` / `CBCentralManagerViewController`: `func render(errorMessage: String)` を追加。実装は `UIAlertController` で最小通知する。
+- delegate コールバック側 (`recordStateChange` / `record`) の helpers は今回触らない。これらは前提条件を隠していない（観察情報をログに載せるための別軸の議論）ため、本決定のスコープ外であり、別 PR で扱う。
+
+---
+
+### D-017: 動的 payload マクロ `@DynamicBLELog` を「切り札」として導入する
+
+**決定:** 引数値ごとに本文を変えたい場面（例: `CBManagerState` の値ごとに「状態変化 unknown」「状態変化 poweredOn」のようにメッセージを分岐させたいケース）に限って使う「切り札」として、`@DynamicBLELog` body マクロを新設する。`@BLELog`（D-015）は `message: String` 固定文を前提とする「不自由なマクロ」であり、こうした分岐は表現できない。新マクロは `source:` クロージャで `DynamicBLELogPayload`（`level` / `message` / `label` を一括で持つ Sendable 値型）を返し、マクロ展開時にクロージャを関数本文末尾で呼んで結果を `BLELogRuntime.log(...)` に橋渡しする。展開は `@BLELog` と同じ「結果捕捉版」（入れ子関数 `__blelogBody` 退避＋ do/catch ラップ）に揃え、`async` / `throws` / 戻り値あり・なし・`Void` のすべてで一貫した展開とする。
+
+**理由:** `CBCentralManagerDelegate.centralManagerDidUpdateState(_:)` のように戻り値を持てない Void 要件で、引数値（`CBManagerState`）の各 case ごとに観察文を変えたいケースが現れた。従来は `private func recordStateChange(_:) -> String` を `@discardableResult` で戻り値偽装して `@BLELog` の結末ログに横流ししていたが、これは戻り値の意味を歪める smell であり「1 メソッド = ログ 1 行」の規律と整合しない。回避策として「case ごとに `@BLELog` 付きの空ラッパメソッドを 8 個並べる」案も検討したが、空ラッパが量産されて可読性が落ちるため、`@BLELog` の不自由さを敢えて緩めた切り札マクロを 1 つだけ導入する方が綺麗に解決できると判断した。
+
+**採用したクロージャ受け渡しの設計（B 案：仮引数経由）:** 当初は A 案（字義スコープ＝クロージャ本体を関数本文末尾へ inline 展開して関数引数や `self` をレキシカルに見せる）を試みたが、Swift は属性引数のクロージャを attribute スコープで型検査するため、関数引数（`central`）や `self` をクロージャ本体から直接参照することができない（コンパイル時 `cannot find 'central' in scope`／`'self' cannot be used on type` で弾かれる）。これは Swift の言語仕様によるものでマクロ実装側からは回避できない。そこで B 案を採用し、クロージャに関数引数を**仮引数として宣言**させ、マクロ展開時に関数引数をその仮引数へ渡して呼び出す形にした（`{ (central: CBCentralManager) in switch central.state { … } }(central)` の形）。マクロ宣言は `source: (repeat each Arg) -> DynamicBLELogPayload` の variadic generics で関数の引数数・型に汎用化する。
+
+**失敗時の payload:** throws の catch 経路では `source:` クロージャを意味的に評価できない（成功時の値を組み立てるための関数）。そこで失敗時は別経路の静的指定とし、`failureMessage: String? = nil` と `failureLabel: String = "BLELog"` を属性引数で受ける。`failureMessage` 未指定なら `失敗(<error>)` のみ、指定があれば `<failureMessage> → 失敗(<error>)` を `.error` レベルで記録する。`failureLabel` の既定値 `"BLELog"` は、失敗時にどの label が一番目立つべきかが文脈依存であり、フォールバック値を一意に決められないため、診断容易性を優先して中立的なリテラルにした（本物の運用では呼び出し側が明示指定することを推奨）。
+
+**戻り値ありメソッドへの適用:** 戻り値は payload クロージャからは見えない（クロージャは関数引数のみを仮引数として受ける）。これは将来要件としての保留事項であり、本マクロでは設計外。
+
+**濫用への抑止:** 切り札は規律の例外であり、安易に使うと「1 メソッド = ログ 1 行」の不自由さが崩れる。マクロ自体は誤用を防げないため、抑止は doc・本意思決定ログ・PR レビューの 3 段で行う。原則は「まず `@BLELog` で表現できないか試す。表現できない（引数値で本文を変えたい・Void で結末を語りたい）場合のみ `@DynamicBLELog` を使う」とする。
+
+**影響:**
+- `CBPlaygroundLogging/Sources/CBPlaygroundLogging/DynamicBLELog.swift`: 新規。`@attached(body)` マクロ宣言（variadic generics で関数の引数列に汎用化）。
+- `CBPlaygroundLogging/Sources/CBPlaygroundLogging/DynamicBLELogPayload.swift`: 新規。Sendable 値型。
+- `CBPlaygroundLogging/Sources/CBPlaygroundLoggingMacros/DynamicBLELogMacro.swift`: 新規。BodyMacro 実装。`@BLELog` と同じ「結果捕捉版」展開を踏襲。
+- `CBPlaygroundLogging/Sources/CBPlaygroundLoggingMacros/DynamicBLELogArguments.swift`: 新規。属性引数のパーサ（`failureMessage` / `failureLabel` / `source` クロージャ式の抽出）。
+- `CBPlaygroundLogging/Sources/CBPlaygroundLoggingMacros/BLELogDiagnostic.swift`: `missingSource` 診断を追加。
+- `CBPlaygroundLogging/Sources/CBPlaygroundLoggingMacros/Plugin.swift`: `DynamicBLELogMacro` を `providingMacros` に追加。
+- `CBPlaygroundLogging/Tests/CBPlaygroundLoggingTests/DynamicBLELogMacroTests.swift`: 新規ユニットテスト（非 throws Void／throws Void（`failureMessage` あり・なし）／async Void／戻り値あり・非 throws の各パターン）。
+- `CentralsFeature/Sources/CentralsFeature/Interactor/CBCentralScanInteractor.swift`: `private func recordStateChange(_:) -> String`（`@discardableResult` 付き）と `private func centralStateDescription(for:)` を撤去し、`centralManagerDidUpdateState(_:)` に `@DynamicBLELog` を直接付与。`@discardableResult` は本ファイルから全廃。
+
+**D-015 との関係:** 本決定は D-015（`@BLELog` の規律）を否定するものではなく、補完するもの。`@BLELog` は引き続き既定であり、「不自由なマクロ」で 1 メソッド 1 ログを強制する。`@DynamicBLELog` はその不自由さで表現できない場面の切り札に限る。
