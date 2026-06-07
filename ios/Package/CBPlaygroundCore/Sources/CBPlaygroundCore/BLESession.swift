@@ -3,6 +3,7 @@
 //  CBPlaygroundCore
 //
 
+import CBPlaygroundLogging
 import CoreBluetooth
 import Foundation
 
@@ -33,24 +34,29 @@ public enum BLESessionError: Error {
 /// service.uuid / characteristic.uuid）付きの辞書で保持し、resume 直後に
 /// nil（= 削除）する。再入時は `alreadyInProgress` を throw することで
 /// 同一対象への多重待ちを防ぐ。
+///
+/// **ログ規約:** ログ取得は `@BLELog` / `@DynamicBLELog` 経由のみ。型名（BLESession）が
+/// そのまま観察軸になるため `label:` は省略しマクロの自動採番に任せる（label の運用規約：
+/// 実装者の型名ではなく観察対象 = インターフェース名を使う。BLESession は観察対象そのもの）。
 @MainActor
 public final class BLESession: NSObject {
-
-    // MARK: Static Properties
-
-    private static let logLabel = "BLESession"
 
     // MARK: Properties
 
     /// 発見イベントを配る Main Actor 同期コールバック。Interactor が設定する。
     public var onDiscovery: ((Discovery) -> Void)?
 
-    private var centralManager: CBCentralManager!
+    /// CBCentralManager の状態変化を上位層に橋渡しするコールバック。BLESession は状態変化ログを
+    /// `@DynamicBLELog` で自身に取り込むが、Interactor 側にも変化通知が要るのでこの経路で配る。
+    public var onStateChange: (() -> Void)?
 
     // MARK: Scan
 
     /// スキャン中かどうか。発見コールバックを配るかどうかの判定に使う。
-    private var isScanning = false
+    /// `stopScan` の前提条件チェックに利用するため、外からも読めるようにする（書き込みは BLESession 内のみ）。
+    public private(set) var isScanning = false
+
+    private var centralManager: CBCentralManager!
 
     // MARK: waitUntilPoweredOn
 
@@ -83,22 +89,26 @@ public final class BLESession: NSObject {
 
     // MARK: Lifecycle
 
+    /// CBCentralManager を `queue: .main` で生成し、CBCentralManagerDelegate を引き受ける。
+    /// `@BLELog` はメソッド宣言にのみ付与でき初期化子に付けられないため、初期化は無音とする。
+    /// 状態変化（最初の `centralManagerDidUpdateState` で .unknown → .poweredOn など）が
+    /// `@DynamicBLELog` で観察されるため、観察軸として失われる情報はない。
     override public init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: .main)
-        log("初期化完了")
     }
 
     // MARK: Functions
 
     // MARK: Public API
 
-    /// CBCentralManager の現在の状態を返す（read-through）。
+    /// CBCentralManager の現在の状態を返す（read-through）。観察対象でない計算的 getter なのでログは付けない。
     public func currentState() -> CBManagerState {
         centralManager.state
     }
 
     /// Bluetooth が poweredOn になるまで待つ。既に poweredOn なら即 return。
+    @BLELog(message: "poweredOn 待機")
     public func waitUntilPoweredOn() async {
         if centralManager.state == .poweredOn {
             return
@@ -111,28 +121,29 @@ public final class BLESession: NSObject {
     /// BLE スキャンを開始する。発見イベントは `onDiscovery` クロージャ（Main Actor 同期）で配る。
     /// 非 Sendable な CBPeripheral を含む `Discovery` を隔離境界へ載せないため、AsyncStream ではなく
     /// 同一アクター内の同期コールバックで渡す。`stopScan()` で配送を止める。
+    @BLELog(message: "スキャン開始")
     public func startScan(serviceUUIDs: [CBUUID]?, allowDuplicates: Bool) {
         isScanning = true
         let options: [String: Any] = [CBCentralManagerScanOptionAllowDuplicatesKey: allowDuplicates]
         centralManager.scanForPeripherals(withServices: serviceUUIDs, options: options)
-        log("スキャン開始 serviceUUIDs=\(serviceUUIDs?.map(\.uuidString) ?? ["nil"]) allowDuplicates=\(allowDuplicates)")
     }
 
     /// スキャンを停止し、発見コールバックの配送を止める。
+    @BLELog(message: "スキャン停止")
     public func stopScan() {
         isScanning = false
         centralManager.stopScan()
-        log("スキャン停止")
     }
 
     /// ペリフェラルへ接続する。didConnect で成功、didFailToConnect で `connectionFailed` を throw。
+    @BLELog(message: "接続")
     public func connect(_ peripheral: CBPeripheral) async throws {
         let identifier = peripheral.identifier
-        guard connectContinuations[identifier] == nil else {
+        guard connectContinuations[identifier] == nil
+        else {
             throw BLESessionError.alreadyInProgress
         }
         retainedPeripherals[identifier] = peripheral
-        log("接続試行: \(peripheral.name ?? "(no name)") [\(identifier.uuidString.prefix(8))…]")
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connectContinuations[identifier] = continuation
             centralManager.connect(peripheral, options: nil)
@@ -140,19 +151,21 @@ public final class BLESession: NSObject {
     }
 
     /// ペリフェラルを切断する（応答不要の fire-and-forget）。
+    @BLELog(message: "切断要求")
     public func disconnect(_ peripheral: CBPeripheral) {
         centralManager.cancelPeripheralConnection(peripheral)
-        log("切断要求: \(peripheral.name ?? "(no name)") [\(peripheral.identifier.uuidString.prefix(8))…]")
     }
 
     /// サービスを探索する。peripheral.delegate を自身に設定してから実行する。
+    /// throws のため `@BLELog` の自動成功・自動失敗ログでカバーできる。
+    @BLELog(message: "サービス探索")
     public func discoverServices(_ serviceUUIDs: [CBUUID]?, for peripheral: CBPeripheral) async throws -> [CBService] {
         let identifier = peripheral.identifier
-        guard discoverServicesContinuations[identifier] == nil else {
+        guard discoverServicesContinuations[identifier] == nil
+        else {
             throw BLESessionError.alreadyInProgress
         }
         peripheral.delegate = self
-        log("サービス探索開始: \(peripheral.name ?? "(no name)")")
         // continuation には制御フロー（Void/Error）のみ載せ、結果は復帰後に Main Actor 上で読み戻す。
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             discoverServicesContinuations[identifier] = continuation
@@ -162,17 +175,18 @@ public final class BLESession: NSObject {
     }
 
     /// キャラクタリスティックを探索する。
+    @BLELog(message: "キャラクタリスティック探索")
     public func discoverCharacteristics(
         _ characteristicUUIDs: [CBUUID]?,
         for service: CBService,
         on peripheral: CBPeripheral
     ) async throws -> [CBCharacteristic] {
         let key = service.uuid
-        guard discoverCharacteristicsContinuations[key] == nil else {
+        guard discoverCharacteristicsContinuations[key] == nil
+        else {
             throw BLESessionError.alreadyInProgress
         }
         peripheral.delegate = self
-        log("キャラクタリスティック探索開始: service=\(service.uuid.uuidString.prefix(8))…")
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             discoverCharacteristicsContinuations[key] = continuation
             peripheral.discoverCharacteristics(characteristicUUIDs, for: service)
@@ -181,27 +195,22 @@ public final class BLESession: NSObject {
     }
 
     /// 記述子を探索する。
+    @BLELog(message: "記述子探索")
     public func discoverDescriptors(
         for characteristic: CBCharacteristic,
         on peripheral: CBPeripheral
     ) async throws -> [CBDescriptor] {
         let key = characteristic.uuid
-        guard discoverDescriptorsContinuations[key] == nil else {
+        guard discoverDescriptorsContinuations[key] == nil
+        else {
             throw BLESessionError.alreadyInProgress
         }
         peripheral.delegate = self
-        log("記述子探索開始: characteristic=\(characteristic.uuid.uuidString.prefix(8))…")
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             discoverDescriptorsContinuations[key] = continuation
             peripheral.discoverDescriptors(for: characteristic)
         }
         return characteristic.descriptors ?? []
-    }
-
-    // MARK: Private
-
-    private func log(_ message: String) {
-        BLELog.log(Self.logLabel, message)
     }
 }
 
@@ -209,9 +218,21 @@ public final class BLESession: NSObject {
 
 extension BLESession: @preconcurrency CBCentralManagerDelegate {
 
+    /// CBCentralManagerDelegate の要件で戻り値を持てず、`CBManagerState` の値ごとに本文を変えたい。
+    /// `@BLELog` の固定 message では表現できないため、切り札の `@DynamicBLELog` を使う。
+    @DynamicBLELog(failureLabel: "BLESession", source: { (central: CBCentralManager) in
+        let message = switch central.state {
+        case .unknown: "状態変化 unknown"
+        case .resetting: "状態変化 resetting"
+        case .unsupported: "状態変化 unsupported"
+        case .unauthorized: "状態変化 unauthorized"
+        case .poweredOff: "状態変化 poweredOff"
+        case .poweredOn: "状態変化 poweredOn"
+        @unknown default: "状態変化 unknown(\(central.state.rawValue))"
+        }
+        return DynamicBLELogPayload(level: .info, message: message, label: "BLESession")
+    })
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        log("状態変化: \(stateDescription(for: central.state))")
-
         if central.state == .poweredOn {
             // 待機中の continuation を全て resume
             let continuations = poweredOnContinuations
@@ -224,28 +245,55 @@ extension BLESession: @preconcurrency CBCentralManagerDelegate {
             // poweredOn でなくなった場合は発見コールバックの配送を止める
             isScanning = false
         }
+        onStateChange?()
     }
 
+    /// 発見イベント。CBCentralManagerDelegate の要件で戻り値は持てず、対象（peripheral）の情報を message に
+    /// 載せたいため `@DynamicBLELog` で peripheral.name を含むメッセージを動的に組み立てる。
+    @DynamicBLELog(failureLabel: "BLESession", source: { (
+        _: CBCentralManager,
+        peripheral: CBPeripheral,
+        _: [String: Any],
+        rssi: NSNumber
+    ) in
+        let name = peripheral.name ?? "(no name)"
+        let identifierPrefix = peripheral.identifier.uuidString.prefix(8)
+        return DynamicBLELogPayload(
+            level: .debug,
+            message: "発見 \(name) [\(identifierPrefix)…] RSSI=\(rssi)",
+            label: "BLESession"
+        )
+    })
     public func centralManager(
         _ central: CBCentralManager,
         didDiscover peripheral: CBPeripheral,
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        guard isScanning else {
+        guard isScanning
+        else {
             // スキャン停止後・poweredOn でない時に届いたコールバックは無視（MECE: 配送対象外）
             return
         }
         let discovery = Discovery(peripheral: peripheral, advertisementData: advertisementData, rssi: RSSI)
         // 同一アクター（Main）内の同期呼び出し。隔離境界を跨がないので Discovery は Sendable 不要。
         onDiscovery?(discovery)
-        log("発見: \(peripheral.name ?? "(no name)") [\(peripheral.identifier.uuidString.prefix(8))…] RSSI=\(RSSI)")
     }
 
+    /// 接続成功イベント。観察対象（接続できた peripheral 名）を message に出したいため `@DynamicBLELog`。
+    @DynamicBLELog(failureLabel: "BLESession", source: { (_: CBCentralManager, peripheral: CBPeripheral) in
+        let name = peripheral.name ?? "(no name)"
+        let identifierPrefix = peripheral.identifier.uuidString.prefix(8)
+        return DynamicBLELogPayload(
+            level: .info,
+            message: "接続成功 \(name) [\(identifierPrefix)…]",
+            label: "BLESession"
+        )
+    })
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         let identifier = peripheral.identifier
-        log("接続成功: \(peripheral.name ?? "(no name)") [\(identifier.uuidString.prefix(8))…]")
-        guard let continuation = connectContinuations[identifier] else {
+        guard let continuation = connectContinuations[identifier]
+        else {
             // 対応する continuation がない場合は接続を受理するだけ（MECE: 待機なしでも正常）
             return
         }
@@ -253,17 +301,29 @@ extension BLESession: @preconcurrency CBCentralManagerDelegate {
         continuation.resume()
     }
 
+    /// 接続失敗イベント。`@BLELog` では error を message に組み込めないため `@DynamicBLELog` を使う。
+    @DynamicBLELog(
+        failureLabel: "BLESession",
+        source: { (_: CBCentralManager, peripheral: CBPeripheral, error: Error?) in
+            let name = peripheral.name ?? "(no name)"
+            let identifierPrefix = peripheral.identifier.uuidString.prefix(8)
+            let errorText = error?.localizedDescription ?? "nil"
+            return DynamicBLELogPayload(
+                level: .error,
+                message: "接続失敗 \(name) [\(identifierPrefix)…] error=\(errorText)",
+                label: "BLESession"
+            )
+        }
+    )
     public func centralManager(
         _ central: CBCentralManager,
         didFailToConnect peripheral: CBPeripheral,
         error: Error?
     ) {
         let identifier = peripheral.identifier
-        log(
-            "接続失敗: \(peripheral.name ?? "(no name)") [\(identifier.uuidString.prefix(8))…] error=\(error?.localizedDescription ?? "nil")"
-        )
         retainedPeripherals[identifier] = nil
-        guard let continuation = connectContinuations[identifier] else {
+        guard let continuation = connectContinuations[identifier]
+        else {
             // 待機なしの場合は無視（MECE: 接続中でなければコールバックは無効）
             return
         }
@@ -271,15 +331,26 @@ extension BLESession: @preconcurrency CBCentralManagerDelegate {
         continuation.resume(throwing: BLESessionError.connectionFailed(error))
     }
 
+    /// 切断イベント。error 付きの message を動的に組み立てたいため `@DynamicBLELog`。
+    @DynamicBLELog(
+        failureLabel: "BLESession",
+        source: { (_: CBCentralManager, peripheral: CBPeripheral, error: Error?) in
+            let name = peripheral.name ?? "(no name)"
+            let identifierPrefix = peripheral.identifier.uuidString.prefix(8)
+            let errorText = error?.localizedDescription ?? "nil"
+            return DynamicBLELogPayload(
+                level: .info,
+                message: "切断 \(name) [\(identifierPrefix)…] error=\(errorText)",
+                label: "BLESession"
+            )
+        }
+    )
     public func centralManager(
         _ central: CBCentralManager,
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
         let identifier = peripheral.identifier
-        log(
-            "切断: \(peripheral.name ?? "(no name)") [\(identifier.uuidString.prefix(8))…] error=\(error?.localizedDescription ?? "nil")"
-        )
         retainedPeripherals[identifier] = nil
 
         // 探索系 continuation が待機中の場合（切断による強制終了）
@@ -299,19 +370,18 @@ extension BLESession: @preconcurrency CBPeripheralDelegate {
 
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         let identifier = peripheral.identifier
-        guard let continuation = discoverServicesContinuations[identifier] else {
+        guard let continuation = discoverServicesContinuations[identifier]
+        else {
             // 待機なしの場合は無視（MECE: 非要求 or タイムアウト後に届いた場合）
             return
         }
         discoverServicesContinuations[identifier] = nil
 
         if let error {
-            log("サービス探索エラー: \(error.localizedDescription)")
             continuation.resume(throwing: error)
         }
         else {
             // 非 Sendable な services は continuation に載せず、復帰後に Main Actor 側で読み戻す。
-            log("サービス探索完了: \((peripheral.services ?? []).count) 件")
             continuation.resume()
         }
     }
@@ -322,18 +392,17 @@ extension BLESession: @preconcurrency CBPeripheralDelegate {
         error: Error?
     ) {
         let key = service.uuid
-        guard let continuation = discoverCharacteristicsContinuations[key] else {
+        guard let continuation = discoverCharacteristicsContinuations[key]
+        else {
             // 待機なしの場合は無視（MECE: 非要求 or タイムアウト後）
             return
         }
         discoverCharacteristicsContinuations[key] = nil
 
         if let error {
-            log("キャラクタリスティック探索エラー: service=\(key) \(error.localizedDescription)")
             continuation.resume(throwing: error)
         }
         else {
-            log("キャラクタリスティック探索完了: service=\(key.uuidString.prefix(8))… \((service.characteristics ?? []).count) 件")
             continuation.resume()
         }
     }
@@ -344,35 +413,18 @@ extension BLESession: @preconcurrency CBPeripheralDelegate {
         error: Error?
     ) {
         let key = characteristic.uuid
-        guard let continuation = discoverDescriptorsContinuations[key] else {
+        guard let continuation = discoverDescriptorsContinuations[key]
+        else {
             // 待機なしの場合は無視（MECE: 非要求 or タイムアウト後）
             return
         }
         discoverDescriptorsContinuations[key] = nil
 
         if let error {
-            log("記述子探索エラー: characteristic=\(key) \(error.localizedDescription)")
             continuation.resume(throwing: error)
         }
         else {
-            log("記述子探索完了: characteristic=\(key.uuidString.prefix(8))… \((characteristic.descriptors ?? []).count) 件")
             continuation.resume()
-        }
-    }
-}
-
-// MARK: - Private Helpers
-
-private extension BLESession {
-    func stateDescription(for state: CBManagerState) -> String {
-        switch state {
-        case .unknown: "unknown"
-        case .resetting: "resetting"
-        case .unsupported: "unsupported"
-        case .unauthorized: "unauthorized"
-        case .poweredOff: "poweredOff"
-        case .poweredOn: "poweredOn"
-        @unknown default: "unknown(\(state.rawValue))"
         }
     }
 }
