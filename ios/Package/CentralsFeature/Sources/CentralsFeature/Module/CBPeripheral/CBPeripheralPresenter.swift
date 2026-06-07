@@ -7,6 +7,10 @@ import CBPlaygroundCore
 import CoreBluetooth
 import Foundation
 
+// CBPeripheralPresenter はログを書かない（規約: ログは Interactor / BLESession 側の @BLELog / @DynamicBLELog で
+// 取り、Presenter は UI への翻訳のみを担う）。前提条件違反は throws で受け、View に `render(errorMessage:)`
+// で伝える（D-016）。
+
 // MARK: - GATT ツリー表示用 VM
 
 /// GATT ツリーのセクション（= サービス 1 件）
@@ -61,6 +65,9 @@ protocol CBPeripheralViewInput: AnyObject {
     func renderTree(sections: [GATTServiceSection], state: CBPeripheralPresenterState)
     /// 状態ラベルのみ更新する
     func renderStatus(_ state: CBPeripheralPresenterState)
+    /// 前提条件違反などのエラー文面を View 側に通知する。ユーザーへの最小通知が責務であり、
+    /// 表示の具体（アラート／トースト等）は実装側で選ぶ。
+    func render(errorMessage: String)
 }
 
 // MARK: - CBPeripheralPresenterInput
@@ -80,10 +87,6 @@ protocol CBPeripheralPresenterInput: AnyObject {
 
 @MainActor
 final class CBPeripheralPresenter: CBPeripheralPresenterInput {
-
-    // MARK: Static Properties
-
-    private static let logLabel = "CBPeripheral"
 
     // MARK: Properties
 
@@ -113,26 +116,46 @@ final class CBPeripheralPresenter: CBPeripheralPresenterInput {
     }
 
     func onScanTapped() {
-        state = .scanning
-        interactor.startScan()
-        renderCurrentState()
+        do {
+            try interactor.startScan()
+            state = .scanning
+            renderCurrentState()
+        }
+        catch {
+            // 前提条件違反（state が .poweredOn でない等）。View にエラー文面を渡して通知する。
+            // ログは Interactor 側の @BLELog の catch ブランチが `→ 失敗(<error>)` で残しているため、ここでは出さない。
+            view?.render(errorMessage: error.localizedDescription)
+        }
     }
 
     func onStopScanTapped() {
-        interactor.stopScan()
-        state = .disconnected
-        renderCurrentState()
+        do {
+            try interactor.stopScan()
+            state = .disconnected
+            renderCurrentState()
+        }
+        catch {
+            // スキャン中でなかった等の前提条件違反。View にエラー文面を渡して通知する。
+            view?.render(errorMessage: error.localizedDescription)
+        }
     }
 
     func onPeripheralSelected(at index: Int) {
         let discoveries = interactor.discoveries()
-        guard index < discoveries.count else {
+        guard index < discoveries.count
+        else {
             return
         }
         let discovery = discoveries[index]
         let peripheral = discovery.peripheral
 
-        interactor.stopScan()
+        do {
+            try interactor.stopScan()
+        }
+        catch {
+            // スキャンしていない状態で行選択された等のケースは、選択 → 接続の本筋に対してノイズなので
+            // ユーザーには伝えず黙殺する。失敗ログは Interactor 側の @BLELog で残る（D-016 の正常黙殺）。
+        }
         connectedPeripheral = peripheral
         state = .connecting
         renderCurrentState()
@@ -163,23 +186,29 @@ final class CBPeripheralPresenter: CBPeripheralPresenterInput {
             connectedPeripheral = nil
         }
         else {
-            // 接続なしの場合はスキャン停止のみ（MECE）
-            interactor.stopScan()
+            // 接続なしの場合はスキャン停止のみ（MECE）。スキャンしていない正常ケースもあるので失敗は黙殺する。
+            do {
+                try interactor.stopScan()
+            }
+            catch {
+                // 画面が消えるタイミングでは元々スキャンしていない正常ケースが多く、エラー文面を出すと
+                // ユーザーには無関係なノイズになる。失敗ログは Interactor 側の @BLELog で残るので黙殺する。
+            }
         }
     }
 
     // MARK: Private - connect & discover
 
     private func connectAndDiscover(peripheral: CBPeripheral) async {
+        // 接続・探索の成功・失敗ログは BLESession 側の @BLELog / @DynamicBLELog で取られるため、Presenter 側
+        // ではログを取らず、結果を UI 状態に翻訳する責務だけを担う（規約: Presenter はログを書かない）。
         do {
             try await interactor.connect(peripheral)
-            BLELog.log(Self.logLabel, "接続成功: \(peripheral.name ?? "(no name)")")
 
             state = .discovering
             renderCurrentState()
 
             let services = try await interactor.discoverServices(for: peripheral)
-            BLELog.log(Self.logLabel, "サービス探索完了: \(services.count) 件")
 
             var sections: [GATTServiceSection] = []
             for service in services {
@@ -208,7 +237,6 @@ final class CBPeripheralPresenter: CBPeripheralPresenterInput {
             renderCurrentState()
         }
         catch {
-            BLELog.log(Self.logLabel, "探索エラー: \(error.localizedDescription)", level: .error)
             connectedPeripheral = nil
             state = .failed(error.localizedDescription)
             renderCurrentState()

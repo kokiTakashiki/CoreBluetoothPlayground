@@ -22,11 +22,13 @@ protocol CBPeripheralInteractorInput: AnyObject {
 
     // MARK: スキャン
 
-    /// NUS フィルタでスキャンを開始する。
-    func startScan()
+    /// NUS フィルタでスキャンを開始する。前提条件として CBCentralManager の state が .poweredOn でなければ
+    /// ならず、違反は `CBCentralManagerError.notPoweredOn` を throws して呼び出し側へ伝える（D-016: Void +
+    /// guard + silent return を避け、契約を throws で型に出す）。
+    func startScan() throws
 
-    /// スキャンを停止する。
-    func stopScan()
+    /// スキャンを停止する。スキャン中でない場合は `CBCentralManagerError.notScanning` を throws する。
+    func stopScan() throws
 
     // MARK: 接続・切断
 

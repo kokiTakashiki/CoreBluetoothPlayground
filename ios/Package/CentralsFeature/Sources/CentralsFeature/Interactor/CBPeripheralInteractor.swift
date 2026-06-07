@@ -4,18 +4,17 @@
 //
 
 import CBPlaygroundCore
+import CBPlaygroundLogging
 import CoreBluetooth
 import Foundation
 
 /// CBPeripheral VIPER モジュールの具象 Interactor。
-/// 操作は BLESession へ委譲する。スキャンで発見した一覧は private に蓄積し、
+/// 操作は共有 `BLESession` へ委譲する。スキャンで発見した一覧は private に蓄積し、
 /// `discoveries()` 経由でのみ公開する。
+///
+/// ログの観察軸は CBPeripheral インターフェースなので `label: "CBPeripheral"` を明示する規約。
 @MainActor
 final class CBPeripheralInteractor {
-
-    // MARK: Static Properties
-
-    private static let logLabel = "CBPeripheral"
 
     // MARK: Properties
 
@@ -36,26 +35,28 @@ final class CBPeripheralInteractor {
     // MARK: Private
 
     /// 1 件の発見を蓄積に反映する（同一 identifier は更新、新規は追記）。
+    /// 一覧の蓄積結果（追加か更新か）を区別するため、振り分け先の `@BLELog` メソッドで結末を取る。
     private func handleDiscovery(_ discovery: Discovery) {
         let peripheral = discovery.peripheral
-        let name = peripheral.name ?? "(no name)"
-        let identifierPrefix = peripheral.identifier.uuidString.prefix(8)
-
-        if let index = discovered.firstIndex(where: {
-            $0.peripheral.identifier == peripheral.identifier
-        }) {
-            discovered[index] = discovery
-            log("↻ 更新: \(name) [\(identifierPrefix)…] RSSI=\(discovery.rssi)")
+        if let index = discovered.firstIndex(where: { $0.peripheral.identifier == peripheral.identifier }) {
+            recordUpdated(discovery, at: index)
         }
         else {
-            discovered.append(discovery)
-            log("✚ 発見: \(name) [\(identifierPrefix)…] RSSI=\(discovery.rssi)")
+            recordAdded(discovery)
         }
         onChange?()
     }
 
-    private func log(_ message: String) {
-        BLELog.log(Self.logLabel, message)
+    /// 既知 identifier の再広告を反映する。
+    @BLELog(message: "発見(再広告)", label: "CBPeripheral")
+    private func recordUpdated(_ discovery: Discovery, at index: Int) {
+        discovered[index] = discovery
+    }
+
+    /// 未知 identifier の発見を蓄積に追加する。
+    @BLELog(message: "発見(新規)", label: "CBPeripheral")
+    private func recordAdded(_ discovery: Discovery) {
+        discovered.append(discovery)
     }
 }
 
@@ -67,16 +68,15 @@ extension CBPeripheralInteractor: CBPeripheralInteractorInput {
         discovered
     }
 
-    func startScan() {
-        guard session.currentState() == .poweredOn else {
-            log("⚠️ スキャン開始できません: Bluetooth が poweredOn でありません")
-            return
+    /// NUS フィルタでスキャンを開始する。`state == .poweredOn` でない場合は throws で押し出す（D-016）。
+    @BLELog(message: "スキャン開始", label: "CBPeripheral")
+    func startScan() throws {
+        guard session.currentState() == .poweredOn
+        else {
+            throw CBCentralManagerError.notPoweredOn(session.currentState())
         }
-
         discovered = []
         onChange?()
-
-        log("🔍 スキャン開始 [NUS フィルタ ON]")
         // 発見は Main Actor 同期コールバックで受け取り、ここで蓄積する。
         session.onDiscovery = { [weak self] discovery in
             self?.handleDiscovery(discovery)
@@ -84,39 +84,46 @@ extension CBPeripheralInteractor: CBPeripheralInteractorInput {
         session.startScan(serviceUUIDs: [BLEConstants.nusService], allowDuplicates: false)
     }
 
-    func stopScan() {
+    /// スキャンを停止する。スキャン中でない場合は throws で押し出す（D-016）。
+    @BLELog(message: "スキャン停止", label: "CBPeripheral")
+    func stopScan() throws {
+        guard session.isScanning
+        else {
+            throw CBCentralManagerError.notScanning
+        }
         session.onDiscovery = nil
         session.stopScan()
-        log("⏹ スキャン停止 (発見数: \(discovered.count))")
     }
 
+    /// ペリフェラルへ接続する。BLESession 側の `@BLELog` で接続の成功・失敗が記録されるため、
+    /// Interactor 側では追加でログを取らない（観察軸 = BLESession の 1 行で完結する）。
     func connect(_ peripheral: CBPeripheral) async throws {
-        log("接続試行: \(peripheral.name ?? "(no name)")")
         try await session.connect(peripheral)
     }
 
+    /// 切断要求の fire-and-forget。BLESession の `@BLELog` でログを取るため Interactor 側では取らない。
     func disconnect(_ peripheral: CBPeripheral) {
         session.disconnect(peripheral)
     }
 
+    /// サービス探索。BLESession 側の `@BLELog` が自動成功・自動失敗ログを取るため Interactor 側では取らない。
     func discoverServices(for peripheral: CBPeripheral) async throws -> [CBService] {
-        log("サービス探索: \(peripheral.name ?? "(no name)")")
-        return try await session.discoverServices(nil, for: peripheral)
+        try await session.discoverServices(nil, for: peripheral)
     }
 
+    /// キャラクタリスティック探索。BLESession 側でログ済み。
     func discoverCharacteristics(
         for service: CBService,
         on peripheral: CBPeripheral
     ) async throws -> [CBCharacteristic] {
-        log("キャラクタリスティック探索: service=\(service.uuid.uuidString.prefix(8))…")
-        return try await session.discoverCharacteristics(nil, for: service, on: peripheral)
+        try await session.discoverCharacteristics(nil, for: service, on: peripheral)
     }
 
+    /// 記述子探索。BLESession 側でログ済み。
     func discoverDescriptors(
         for characteristic: CBCharacteristic,
         on peripheral: CBPeripheral
     ) async throws -> [CBDescriptor] {
-        log("記述子探索: characteristic=\(characteristic.uuid.uuidString.prefix(8))…")
-        return try await session.discoverDescriptors(for: characteristic, on: peripheral)
+        try await session.discoverDescriptors(for: characteristic, on: peripheral)
     }
 }

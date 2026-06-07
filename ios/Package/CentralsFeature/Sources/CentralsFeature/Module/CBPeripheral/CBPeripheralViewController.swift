@@ -232,6 +232,15 @@ extension CBPeripheralViewController: CBPeripheralViewInput {
         statusLabel.text = statusText(for: state)
         updateButtonStates()
     }
+
+    /// 前提条件違反などのエラー文面をユーザーへ最小通知する。
+    /// 表示の具体（アラート）は View 側で選ぶ。失敗ログは Interactor 側の @BLELog の catch ブランチが
+    /// `→ 失敗(<error>)` で残しているため、ここではログを取らない。
+    func render(errorMessage: String) {
+        let alert = UIAlertController(title: nil, message: errorMessage, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
 }
 
 // MARK: - UITableViewDataSource
