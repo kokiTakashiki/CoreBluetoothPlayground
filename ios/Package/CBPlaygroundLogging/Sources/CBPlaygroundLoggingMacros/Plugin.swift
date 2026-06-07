@@ -11,5 +11,6 @@ import SwiftSyntaxMacros
 struct CBPlaygroundLoggingMacros: CompilerPlugin {
     let providingMacros: [Macro.Type] = [
         BLELogMacro.self,
+        DynamicBLELogMacro.self,
     ]
 }
