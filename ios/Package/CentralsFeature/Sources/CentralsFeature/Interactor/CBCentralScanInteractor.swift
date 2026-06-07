@@ -10,13 +10,8 @@ import Foundation
 
 /// スキャン専用の CBCentralManager 具象 Interactor。
 /// `CBCentralManagerInteractorInput` を実装し、CBCentralManagerDelegate を処理する。
-/// CBCentralManager は queue: .main で初期化するため、デリゲートコールバックはメインスレッドで到達する。
-///
-/// ログは `@BLELog` 経由でのみ取得する。各メソッドは exit でちょうど 1 行だけログを出し、途中経過の
-/// ログは持たない。分岐ごとに別々のログを出していた箇所は、結末を表す文字列を返すメソッドへ分割し、
-/// その単一の戻り値を `@BLELog` の結末として記録する形に集約している。label は型名の自動採番ではなく
-/// 観察対象のインターフェース名 `"CBCentralManager"` を明示する。本リポジトリの観察軸は実装者の型名で
-/// なく Core Bluetooth のインターフェース名であり、ConsoleView の Labels 絞り込みもこの軸で行うため。
+/// CBCentralManager を `queue: .main` で初期化するため、デリゲートコールバックはメインスレッドで到達する
+/// （`@MainActor` 隔離と矛盾しない）。
 @MainActor
 final class CBCentralScanInteractor: NSObject {
 
@@ -51,9 +46,8 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
         discovered
     }
 
-    /// スキャンを開始する。前提条件（state == .poweredOn）を満たさない場合は
-    /// `CBCentralManagerError.notPoweredOn` を throws する。`@BLELog` の catch ブランチが exit で
-    /// `→ 失敗(<error>)` のログを 1 行残すため、失敗経路のログも別途記述しない。
+    /// スキャンを開始する。`state == .poweredOn` でない場合は `CBCentralManagerError.notPoweredOn` を
+    /// throws する。
     @BLELog(message: "スキャン開始", label: "CBCentralManager")
     func startScan(filterNUS: Bool, allowDuplicates: Bool) throws {
         guard centralManager.state == .poweredOn
@@ -68,7 +62,6 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
     }
 
     /// スキャンを停止する。スキャン中でない場合は `CBCentralManagerError.notScanning` を throws する。
-    /// `@BLELog` が成功・失敗の双方を exit で 1 行ログに残す。
     @BLELog(message: "スキャン停止", label: "CBCentralManager")
     func stopScan() throws {
         guard centralManager.isScanning
