@@ -12,14 +12,15 @@ Core Bluetooth の各 API が**どのように振る舞うか**を実機で直�
 
 ```
 ios/
-  CoreBluetoothPlayground/       app shell（InterfaceListViewController・起動処理）
+  CoreBluetoothPlayground/       app shell（TopicListViewController・起動処理）
   Package/
-    CBPlaygroundCore/            共有コア（BLEConstants・Discovery Entity）
-    CentralsFeature/             Centrals カテゴリ（CBCentralManager VIPER モジュール）
+    CBPlaygroundCore/            共有コア（BLEConstants・Discovery Entity・BLESession）
+    CentralsFeature/             Centrals カテゴリ（CBCentralManager / CBPeripheral VIPER モジュール）
+    CBPlaygroundConsole/         ログ閲覧 UI（CBLogConsole / PulseUI）
   project.yml                    XcodeGen スペック
 ```
 
-app shell はインターフェース一覧メニュー（`InterfaceListViewController`）と起動処理だけを持ち、各機能パッケージに依存します。複雑な操作画面は VIPER（View / Presenter / Interactor / Router）で実装し、`Router.assemble()` を入口にしています。
+app shell はトピック一覧メニュー（`TopicListViewController`）と起動処理だけを持ち、各機能パッケージに依存します。複雑な操作画面は VIPER（View / Presenter / Interactor / Router）で実装し、`Router.assemble()` を入口にしています。CoreBluetooth の async/await ラッパ `BLESession`（`CBPlaygroundCore`）がスキャン・接続・GATT 探索の土台を担い、CBCentralManager の所有を一本化しています。
 
 ## インターフェース索引
 
@@ -28,7 +29,7 @@ app shell はインターフェース一覧メニュー（`InterfaceListViewCont
 | インターフェース | 主な確認内容 | 状態 |
 |-----------------|-------------|------|
 | `CBCentralManager` | 状態・スキャン・接続/切断を操作して観察 | 実装済み（CentralsFeature / VIPER）（PR1） |
-| `CBPeripheral` | 探索・read/write・RSSI 取得を操作して観察 | 予定 |
+| `CBPeripheral` | GATT 探索（サービス/キャラクタリスティック/記述子ツリー表示） | 実装済み（CentralsFeature / VIPER）（PR2） |
 | `CBCharacteristic` | read / write / notify・indicate / properties | 予定 |
 | `CBDescriptor` | 記述子の探索・read/write | 予定 |
 | `CBPeripheralManager` | ローカル GATT・広告・updateValue を操作 | 予定 |

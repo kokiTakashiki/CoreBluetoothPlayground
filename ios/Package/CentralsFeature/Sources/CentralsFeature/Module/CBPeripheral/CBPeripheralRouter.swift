@@ -1,23 +1,23 @@
 //
-//  CBCentralManagerRouter.swift
+//  CBPeripheralRouter.swift
 //  CentralsFeature
 //
 
 import CBPlaygroundCore
 import UIKit
 
-// MARK: - CBCentralManagerRouterInput
+// MARK: - CBPeripheralRouterInput
 
-/// CBCentralManager モジュールのルーター境界（今回は画面遷移なし）
+/// CBPeripheral モジュールのルーター境界（今回は画面遷移なし）
 @MainActor
-protocol CBCentralManagerRouterInput: AnyObject {}
+protocol CBPeripheralRouterInput: AnyObject {}
 
-// MARK: - CBCentralManagerRouter
+// MARK: - CBPeripheralRouter
 
-/// CBCentralManager VIPER モジュールの組み立てエントリ。
+/// CBPeripheral VIPER モジュールの組み立てエントリ。
 /// app shell は `assemble()` を呼んで得た UIViewController を表示するだけでよい。
 @MainActor
-public final class CBCentralManagerRouter: CBCentralManagerRouterInput {
+public final class CBPeripheralRouter: CBPeripheralRouterInput {
 
     // MARK: Lifecycle
 
@@ -29,9 +29,9 @@ public final class CBCentralManagerRouter: CBCentralManagerRouterInput {
     /// BLESession を新規生成し Interactor に注入する。
     public static func assemble() -> UIViewController {
         let session = BLESession()
-        let interactor = CBCentralScanInteractor(session: session)
-        let presenter = CBCentralManagerPresenter(interactor: interactor)
-        let viewController = CBCentralManagerViewController()
+        let interactor = CBPeripheralInteractor(session: session)
+        let presenter = CBPeripheralPresenter(interactor: interactor)
+        let viewController = CBPeripheralViewController()
         viewController.presenter = presenter
         presenter.view = viewController
         return viewController

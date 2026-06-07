@@ -10,12 +10,14 @@
 enum Topic: CaseIterable {
 
     case cbCentralManager
+    case cbPeripheral
 
     // MARK: Computed Properties
 
     var title: String {
         switch self {
         case .cbCentralManager: "CBCentralManager"
+        case .cbPeripheral: "CBPeripheral"
         }
     }
 }

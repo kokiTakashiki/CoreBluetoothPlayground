@@ -15,7 +15,11 @@ import Foundation
 /// 原文の辞書のまま保持するのは、「Core Bluetooth が実際に何を渡してくるか」を観察するという本リポジトリの
 /// 目的に忠実であるため（整形して情報を落とさない）。単なる値の寄せ集めではなく、「1 回の発見」という
 /// 意味のある単位を表す。
-public struct Discovery {
+/// `@unchecked Sendable` の理由: Discovery は CBCentralManager(queue: .main) によって
+/// Main Actor 上でのみ生成・消費される。CBPeripheral は Sendable 非準拠だが、
+/// BLESession / Interactor / Presenter はすべて @MainActor に閉じており、
+/// スレッドを跨いで渡すことがない。コンパイラが証明できない部分を実装者が保証する。
+public struct Discovery: @unchecked Sendable {
 
     // MARK: Properties
 

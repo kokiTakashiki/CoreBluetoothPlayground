@@ -226,3 +226,47 @@
 - `CentralsFeature/Sources/CentralsFeature/Interactor/CBCentralScanInteractor.swift`: `private func recordStateChange(_:) -> String`（`@discardableResult` 付き）と `private func centralStateDescription(for:)` を撤去し、`centralManagerDidUpdateState(_:)` に `@DynamicBLELog` を直接付与。`@discardableResult` は本ファイルから全廃。
 
 **D-015 との関係:** 本決定は D-015（`@BLELog` の規律）を否定するものではなく、補完するもの。`@BLELog` は引き続き既定であり、「不自由なマクロ」で 1 メソッド 1 ログを強制する。`@DynamicBLELog` はその不自由さで表現できない場面の切り札に限る。
+
+---
+
+### D-018: 共有 BLESession（async/await）導入・スキャン集約・CBPeripheral VIPER モジュール追加
+
+**決定:** CoreBluetooth の async/await ラッパ `BLESession` を `CBPlaygroundCore` に導入し、`CBCentralManager` の所有を一本化する。`CBPeripheral` を 2 つ目の VIPER モジュールとして `CentralsFeature` に追加する。
+
+**理由:**
+- 複数モジュール（CBCentralManager, CBPeripheral, ...）がそれぞれ `CBCentralManager` を所有すると、Bluetooth ラジオが競合する（iOS は 1 アプリあたり CBCentralManager の同時使用に制限あり）。共有 `BLESession` に所有を集約し、上位層は BLESession を通じてのみ CBCentralManager を操作する。
+- callback ベースの CoreBluetooth デリゲートを `CheckedContinuation` で async/await に橋渡しすることで、呼び出し側のコードが手続き的に読みやすくなる。
+- 非要求イベント（切断通知、スキャン発見）は `AsyncStream` で渡す（後続の D-019 で Main Actor 同期コールバックへ上書き）。
+
+**二重 resume 対策:**
+- connect/discoverServices/discoverCharacteristics/discoverDescriptors の continuation は `[キー: continuation]` 辞書で保持する。
+- resume 直後にキーを削除（`nil` 化）し、再入時は `alreadyInProgress` エラーを throw する（guard で早期リターン）。
+- これにより「デリゲートが 2 回呼ばれる」「同一対象に 2 回 await する」の両方で二重 resume が起きない。
+
+**影響:**
+- `CBPlaygroundCore/Sources/CBPlaygroundCore/BLESession.swift`: 新規作成（BLESession + BLESessionError）。
+- `CentralsFeature/Sources/CentralsFeature/Interactor/CBCentralScanInteractor.swift`: CBCentralManager 直所有・CBCentralManagerDelegate 実装を撤去し BLESession 利用へリファクタ。イニシャライザが `session: BLESession` を受け取る形に変更。
+- `CentralsFeature/Sources/CentralsFeature/Module/CBCentralManager/CBCentralManagerRouter.swift`: `BLESession()` を生成して `CBCentralScanInteractor` に注入するよう変更。
+- `CentralsFeature/Sources/CentralsFeature/Module/CBPeripheral/`: 新規 VIPER モジュール一式（CBPeripheralInteractorInput, CBPeripheralInteractor, CBPeripheralPresenter, CBPeripheralViewController, CBPeripheralRouter）。
+- `CentralsFeature/Sources/CentralsFeature/Interactor/CBPeripheralInteractor.swift`: 新規具象 Interactor（BLESession 委譲）。
+- `ios/CoreBluetoothPlayground/Screens/Topic.swift`: `case cbPeripheral` 追加。
+- `ios/CoreBluetoothPlayground/Screens/TopicListViewController.swift`: `case .cbPeripheral: CBPeripheralRouter.assemble()` 追加。
+
+---
+
+### D-019: CoreBluetooth 型は Main Actor 完結で扱い `@unchecked Sendable` を全廃する
+
+**決定:** `CBService` / `CBPeripheral` / `CBCharacteristic` / `CBDescriptor` が `Sendable` 非準拠なのは「CoreBluetooth は単一アクター（Main Actor）で扱う」という設計上の合図と解釈する。`BLESession` 配下では**非 Sendable な CB 値を隔離境界（`CheckedContinuation` / `AsyncStream`）を跨いで転送せず**、全処理を Main Actor 上で完結させる。具体的には:
+- 探索系（`discoverServices` / `discoverCharacteristics` / `discoverDescriptors`）の continuation は `CheckedContinuation<Void, Error>` とし、制御フロー（成功＝`resume()`／失敗＝`resume(throwing:)`）のみを載せる。結果は `try await` 復帰後に Main Actor 上で `peripheral.services ?? []` 等を読み戻す。public シグネチャ（戻り値型 `[CBService]` 等）は不変。
+- スキャン発見・切断イベントは `AsyncStream` ではなく **Main Actor 同期コールバック**で配る（`onDiscovery: ((Discovery) -> Void)?`）。同一アクター内の同期呼び出しは隔離境界を跨がないため、`Discovery` を `Sendable` にする必要がない。`Discovery` は素の `struct` に戻す（生の `CBPeripheral` と原文 `advertisementData` を保持する設計は維持）。
+
+**根拠（実測）:** Swift 6.0・approachable concurrency（`defaultIsolation(MainActor)` / `NonisolatedNonsendingByDefault`）未有効では、Main Actor 隔離由来の値（`peripheral.services` 等）は disconnected region にならず `sending` を満たせない（診断: "main actor-isolated 'services' is passed as a 'sending' parameter"）。`AsyncStream` は Element に `Sendable` を要求する。よって境界を跨ぐ設計は `@unchecked Sendable`（および用途別キャリア `ServicesResult` / `CharacteristicsResult` / `DescriptorsResult` / `DisconnectionEvent`、旧 `SendableBox`）を不可避にしていた。境界を跨がない設計に変えることで、リポジトリ全体から `@unchecked Sendable` と `SendableBox` を全廃した（grep 0 件）。D-018 の「非要求イベントは `AsyncStream` で渡す」方針はこの D-019 で上書きする。
+
+**D-016 との関係:** D-016（前提条件は throws で押し出す）は契約の見せ方（Void / silent return を避け、エラーで意図的に呼び出し側に届ける）に関する規約であり、本決定は Sendable / Actor 隔離（非 Sendable な CB 値を境界を跨がせない）という独立した別軸の議論である。両者は同じ `BLESession` / Interactor 周辺に作用するが互いに矛盾せず、本リポジトリでは併存する。
+
+**トレードオフ:** イベント配送が `AsyncStream` から Main Actor クロージャになる（既存 Interactor の `onChange` と同流儀で、`scanTask` 購読が不要になり配線が単純化する）。`disconnectionEvents()` は消費側が無かったため関数ごと削除した。BLE delegate 処理は現状軽量なので Main Actor 同期で問題ないが、将来重い処理が出た場合のみ別途バックグラウンドへ逃がす。
+
+**影響:**
+- `CBPlaygroundCore/Sources/CBPlaygroundCore/BLESession.swift`: キャリア構造体・`DisconnectionEvent`・`disconnectionEvents()`・`scanContinuation` を撤去。`onDiscovery` プロパティと `isScanning` フラグを追加。`startScan` は戻り値なし、探索系は Void continuation + 読み戻しに変更。
+- `CBPlaygroundCore/Sources/CBPlaygroundCore/Discovery.swift`: `@unchecked Sendable` を外し素の `struct` に戻す。
+- `CentralsFeature/.../Interactor/CBCentralScanInteractor.swift` / `CBPeripheralInteractor.swift`: `AsyncStream` 購読（`scanTask`）を撤去し、`session.onDiscovery` を設定して `handleDiscovery(_:)` で同期蓄積する形に変更。`stopScan` で `onDiscovery = nil`。

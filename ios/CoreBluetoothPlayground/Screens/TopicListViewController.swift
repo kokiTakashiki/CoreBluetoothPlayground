@@ -47,6 +47,7 @@ final class TopicListViewController: UITableViewController {
         let viewController: UIViewController =
             switch topics[indexPath.row] {
             case .cbCentralManager: CBCentralManagerRouter.assemble()
+            case .cbPeripheral: CBPeripheralRouter.assemble()
             }
         navigationController?.pushViewController(viewController, animated: true)
     }
