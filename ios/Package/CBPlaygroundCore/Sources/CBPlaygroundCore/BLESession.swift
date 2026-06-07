@@ -74,13 +74,23 @@ public final class BLESession: NSObject {
 
     // MARK: discoverCharacteristics
 
-    /// service.uuid → continuation
-    private var discoverCharacteristicsContinuations: [CBUUID: CheckedContinuation<Void, Error>] = [:]
+    /// service.uuid → (どの peripheral 配下か, continuation)
+    ///
+    /// 切断時の解放で「この peripheral 配下の全エントリ」を線形フィルタで特定するため、
+    /// 値タプルに `peripheralIdentifier` を一緒に保持する。CBService の `peripheral`
+    /// プロパティは weak で切断時に nil になる可能性があるため、保存時点の identifier を
+    /// 値として持つことで安全に逆引きする。
+    private var discoverCharacteristicsContinuations:
+        [CBUUID: (peripheralIdentifier: UUID, continuation: CheckedContinuation<Void, Error>)] = [:]
 
     // MARK: discoverDescriptors
 
-    /// characteristic.uuid → continuation
-    private var discoverDescriptorsContinuations: [CBUUID: CheckedContinuation<Void, Error>] = [:]
+    /// characteristic.uuid → (どの peripheral 配下か, continuation)
+    ///
+    /// `discoverCharacteristicsContinuations` と同じ理由で peripheral.identifier を
+    /// 値タプルに保持する。
+    private var discoverDescriptorsContinuations:
+        [CBUUID: (peripheralIdentifier: UUID, continuation: CheckedContinuation<Void, Error>)] = [:]
 
     // MARK: Retained peripherals
 
@@ -182,13 +192,14 @@ public final class BLESession: NSObject {
         on peripheral: CBPeripheral
     ) async throws -> [CBCharacteristic] {
         let key = service.uuid
+        let peripheralIdentifier = peripheral.identifier
         guard discoverCharacteristicsContinuations[key] == nil
         else {
             throw BLESessionError.alreadyInProgress
         }
         peripheral.delegate = self
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            discoverCharacteristicsContinuations[key] = continuation
+            discoverCharacteristicsContinuations[key] = (peripheralIdentifier, continuation)
             peripheral.discoverCharacteristics(characteristicUUIDs, for: service)
         }
         return service.characteristics ?? []
@@ -201,13 +212,14 @@ public final class BLESession: NSObject {
         on peripheral: CBPeripheral
     ) async throws -> [CBDescriptor] {
         let key = characteristic.uuid
+        let peripheralIdentifier = peripheral.identifier
         guard discoverDescriptorsContinuations[key] == nil
         else {
             throw BLESessionError.alreadyInProgress
         }
         peripheral.delegate = self
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            discoverDescriptorsContinuations[key] = continuation
+            discoverDescriptorsContinuations[key] = (peripheralIdentifier, continuation)
             peripheral.discoverDescriptors(for: characteristic)
         }
         return characteristic.descriptors ?? []
@@ -353,13 +365,42 @@ extension BLESession: @preconcurrency CBCentralManagerDelegate {
         let identifier = peripheral.identifier
         retainedPeripherals[identifier] = nil
 
-        // 探索系 continuation が待機中の場合（切断による強制終了）
+        // services 探索の continuation が待機中の場合（切断による強制終了）
         if let continuation = discoverServicesContinuations[identifier] {
             discoverServicesContinuations[identifier] = nil
             continuation.resume(throwing: BLESessionError.disconnected(error))
         }
         else {
-            // 探索待機なし（MECE: サービス探索前に切断された場合は何もしない）
+            // services 探索の待機なし（MECE: サービス探索前に切断された場合は何もしない）
+        }
+
+        // characteristics 探索: 当該 peripheral 配下の全エントリを解放
+        // 辞書のキー（service.uuid）と peripheral の対応はタプルの peripheralIdentifier で線形に判定する。
+        let abortedCharacteristicKeys = discoverCharacteristicsContinuations
+            .filter { $0.value.peripheralIdentifier == identifier }
+            .map(\.key)
+        for key in abortedCharacteristicKeys {
+            guard let entry = discoverCharacteristicsContinuations[key]
+            else {
+                // 直前のフィルタ結果から取り出すため到達しない想定。念のための MECE 分岐。
+                continue
+            }
+            discoverCharacteristicsContinuations[key] = nil
+            entry.continuation.resume(throwing: BLESessionError.disconnected(error))
+        }
+
+        // descriptors 探索: 当該 peripheral 配下の全エントリを解放
+        let abortedDescriptorKeys = discoverDescriptorsContinuations
+            .filter { $0.value.peripheralIdentifier == identifier }
+            .map(\.key)
+        for key in abortedDescriptorKeys {
+            guard let entry = discoverDescriptorsContinuations[key]
+            else {
+                // 直前のフィルタ結果から取り出すため到達しない想定。念のための MECE 分岐。
+                continue
+            }
+            discoverDescriptorsContinuations[key] = nil
+            entry.continuation.resume(throwing: BLESessionError.disconnected(error))
         }
     }
 }
@@ -392,7 +433,7 @@ extension BLESession: @preconcurrency CBPeripheralDelegate {
         error: Error?
     ) {
         let key = service.uuid
-        guard let continuation = discoverCharacteristicsContinuations[key]
+        guard let entry = discoverCharacteristicsContinuations[key]
         else {
             // 待機なしの場合は無視（MECE: 非要求 or タイムアウト後）
             return
@@ -400,10 +441,10 @@ extension BLESession: @preconcurrency CBPeripheralDelegate {
         discoverCharacteristicsContinuations[key] = nil
 
         if let error {
-            continuation.resume(throwing: error)
+            entry.continuation.resume(throwing: error)
         }
         else {
-            continuation.resume()
+            entry.continuation.resume()
         }
     }
 
@@ -413,7 +454,7 @@ extension BLESession: @preconcurrency CBPeripheralDelegate {
         error: Error?
     ) {
         let key = characteristic.uuid
-        guard let continuation = discoverDescriptorsContinuations[key]
+        guard let entry = discoverDescriptorsContinuations[key]
         else {
             // 待機なしの場合は無視（MECE: 非要求 or タイムアウト後）
             return
@@ -421,10 +462,10 @@ extension BLESession: @preconcurrency CBPeripheralDelegate {
         discoverDescriptorsContinuations[key] = nil
 
         if let error {
-            continuation.resume(throwing: error)
+            entry.continuation.resume(throwing: error)
         }
         else {
-            continuation.resume()
+            entry.continuation.resume()
         }
     }
 }
