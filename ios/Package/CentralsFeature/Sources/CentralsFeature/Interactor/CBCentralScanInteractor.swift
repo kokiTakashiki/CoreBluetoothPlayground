@@ -9,36 +9,42 @@ import CoreBluetooth
 import Foundation
 
 /// スキャン専用の CBCentralManager 具象 Interactor。
-/// `CBCentralManagerInteractorInput` を実装し、CBCentralManagerDelegate を処理する。
-/// CBCentralManager を `queue: .main` で初期化するため、デリゲートコールバックはメインスレッドで到達する
-/// （`@MainActor` 隔離と矛盾しない）。
+/// `CBCentralManagerInteractorInput` を実装し、CBCentralManager の所有・CBCentralManagerDelegate の処理は
+/// 共有 `BLESession`（async/await ラッパ）へ移譲する。Interactor はスキャン操作・発見イベントの蓄積・状態の
+/// 読み戻しに専念する。delegate から来る `centralManagerDidUpdateState` の状態変化ログは BLESession 側で
+/// `@DynamicBLELog` として取るため、Interactor からは扱わない。
 @MainActor
-final class CBCentralScanInteractor: NSObject {
+final class CBCentralScanInteractor {
 
     // MARK: Properties
 
     var onChange: (() -> Void)?
 
-    /// 発見結果の蓄積。CBCentralManager は一覧を保持しないため Interactor が持つが、完全に private とし
+    /// 発見結果の蓄積。BLESession の onDiscovery コールバックで受け取るが、完全に private とし
     /// 公開は `discoveries()` 経由のみとする。
     private var discovered: [Discovery] = []
 
-    private var centralManager: CBCentralManager!
+    private let session: BLESession
 
     // MARK: Lifecycle
 
-    override init() {
-        super.init()
-        centralManager = CBCentralManager(delegate: self, queue: .main)
+    init(session: BLESession) {
+        self.session = session
+        // BLESession の CBCentralManager 状態変化を Interactor 利用側にも橋渡しする。
+        // BLESession 自身は状態変化ログを @DynamicBLELog で出すが、上位層には変化通知が要るので別経路で配る。
+        session.onStateChange = { [weak self] in
+            self?.onChange?()
+        }
     }
 }
 
 // MARK: - CBCentralManagerInteractorInput
 
 extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
-    /// 状態は保持せず、その都度 CBCentralManager に問い合わせて返す。
+
+    /// 状態は保持せず、その都度 BLESession 経由で CBCentralManager に問い合わせて返す。
     func currentState() -> CBManagerState {
-        centralManager.state
+        session.currentState()
     }
 
     /// 蓄積した発見結果を返す（内部配列は private、公開はこの関数のみ）。
@@ -47,62 +53,40 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
     }
 
     /// スキャンを開始する。`state == .poweredOn` でない場合は `CBCentralManagerError.notPoweredOn` を
-    /// throws する。
+    /// throws する。発見イベントは BLESession の `onDiscovery` を購読して同期蓄積する。
     @BLELog(message: "スキャン開始", label: "CBCentralManager")
     func startScan(filterNUS: Bool, allowDuplicates: Bool) throws {
-        guard centralManager.state == .poweredOn
+        guard session.currentState() == .poweredOn
         else {
-            throw CBCentralManagerError.notPoweredOn(centralManager.state)
+            throw CBCentralManagerError.notPoweredOn(session.currentState())
         }
         discovered = []
         onChange?()
         let serviceUUIDs: [CBUUID]? = filterNUS ? [BLEConstants.nusService] : nil
-        let options: [String: Any] = [CBCentralManagerScanOptionAllowDuplicatesKey: allowDuplicates]
-        centralManager.scanForPeripherals(withServices: serviceUUIDs, options: options)
+        // 発見は Main Actor 同期コールバックで受け取り、ここで蓄積する。
+        session.onDiscovery = { [weak self] discovery in
+            self?.handleDiscovery(discovery)
+        }
+        session.startScan(serviceUUIDs: serviceUUIDs, allowDuplicates: allowDuplicates)
     }
 
     /// スキャンを停止する。スキャン中でない場合は `CBCentralManagerError.notScanning` を throws する。
     @BLELog(message: "スキャン停止", label: "CBCentralManager")
     func stopScan() throws {
-        guard centralManager.isScanning
+        guard session.isScanning
         else {
             throw CBCentralManagerError.notScanning
         }
-        centralManager.stopScan()
-    }
-}
-
-// MARK: - CBCentralManagerDelegate
-
-extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
-    /// CBCentralManagerDelegate の要件であり戻り値は持てない。`CBManagerState` の値ごとに本文を変えたい
-    /// ため `@BLELog` の固定文では表現できず、切り札の `@DynamicBLELog` を使う。`source:` クロージャは
-    /// 関数引数を仮引数として受け取り、マクロ展開時に関数引数を渡して呼び出される。
-    @DynamicBLELog(source: { (central: CBCentralManager) in
-        let message = switch central.state {
-        case .unknown: "状態変化 unknown"
-        case .resetting: "状態変化 resetting"
-        case .unsupported: "状態変化 unsupported"
-        case .unauthorized: "状態変化 unauthorized"
-        case .poweredOff: "状態変化 poweredOff"
-        case .poweredOn: "状態変化 poweredOn"
-        @unknown default: "状態変化 unknown(\(central.state.rawValue))"
-        }
-        return DynamicBLELogPayload(level: .info, message: message, label: "CBCentralManager")
-    })
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        onChange?()
+        session.onDiscovery = nil
+        session.stopScan()
     }
 
-    /// CBCentralManagerDelegate の要件であり戻り値は持てない。新規発見か既知デバイスの再広告かで
+    // MARK: Private
+
+    /// BLESession の onDiscovery で受けた 1 件を蓄積に反映する。新規発見か既知デバイスの再広告かで
     /// 観察上の意味が違うため、ここで分岐して別々の `@BLELog` メソッドへ振り分ける。
-    func centralManager(
-        _ central: CBCentralManager,
-        didDiscover peripheral: CBPeripheral,
-        advertisementData: [String: Any],
-        rssi RSSI: NSNumber
-    ) {
-        let discovery = Discovery(peripheral: peripheral, advertisementData: advertisementData, rssi: RSSI)
+    private func handleDiscovery(_ discovery: Discovery) {
+        let peripheral = discovery.peripheral
         if let index = discovered.firstIndex(where: { $0.peripheral.identifier == peripheral.identifier }) {
             recordUpdated(discovery, at: index)
         }

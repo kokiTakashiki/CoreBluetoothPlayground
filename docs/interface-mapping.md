@@ -7,14 +7,14 @@
 | Centrals | `CBCentral` | 操作 | iOS を Peripheral 役にし、購読してきた Central と maximumUpdateValueLength を観察 | 予定 |
 | Centrals | `CBCentralManager` | 操作 | 状態・スキャン・接続/切断を操作して観察 | 実装済み（CentralsFeature / VIPER）（PR1） |
 | Centrals | `CBCentralManagerDelegate` | 操作 | 各コールバックの発火を実機操作でログ表示 | 予定 |
-| Peripherals | `CBPeripheral` | 操作 | 探索・read/write・RSSI 取得を操作して観察 | 予定 |
-| Peripherals | `CBPeripheralDelegate` | 操作 | 探索・読み書き完了コールバックをログ表示 | 予定 |
+| Peripherals | `CBPeripheral` | 操作 | 探索・read/write・RSSI 取得を操作して観察 | 実装済み（CentralsFeature / VIPER, PR2）|
+| Peripherals | `CBPeripheralDelegate` | 操作 | 探索・読み書き完了コールバックをログ表示 | 実装済み（BLESession で bridge, PR2）|
 | Peripherals | `CBPeripheralManager` | 操作 | ローカル GATT 公開・広告・updateValue を操作 | 予定 |
 | Peripherals | `CBPeripheralManagerDelegate` | 操作 | 購読・読み書き要求コールバックをログ表示 | 予定 |
 | Peripherals | `CBAttribute` | 説明 | 基底クラス。uuid プロパティと Service/Characteristic/Descriptor の継承関係を図解 | 予定 |
 | Peripherals | `CBAttributePermissions` | 操作 | Mutable 定義時の権限を変え、読み書き可否を観察 | 予定 |
 | Data Transfer | データ転送（解説記事） | 説明 | チャンク分割・MTU の要点を要約し CBCharacteristic 画面へ誘導 | 予定 |
-| Services | `CBService` | 操作 | 探索結果のサービス階層を表示 | 予定 |
+| Services | `CBService` | 操作 | 探索結果のサービス階層を表示 | 実装済み（CBPeripheral VIPER の GATT ツリー表示, PR2）|
 | Services | `CBMutableService` | 操作 | Peripheral 役でサービスを定義・公開 | 予定 |
 | Services | `CBCharacteristic` | 操作 | read / write（with/without response）/ notify・indicate / properties / value | 予定 |
 | Services | `CBMutableCharacteristic` | 操作 | Peripheral 役で特性を定義（properties・permissions） | 予定 |
