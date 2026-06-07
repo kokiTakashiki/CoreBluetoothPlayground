@@ -19,6 +19,12 @@ import Foundation
 /// Main Actor 上でのみ生成・消費される。CBPeripheral は Sendable 非準拠だが、
 /// BLESession / Interactor / Presenter はすべて @MainActor に閉じており、
 /// スレッドを跨いで渡すことがない。コンパイラが証明できない部分を実装者が保証する。
+/// この `@unchecked` が必要なのは、`startScan` が `AsyncStream<Discovery>` を返し、
+/// `AsyncStream` の Element が Sendable 準拠を要求するため（Element 型側の制約であり、
+/// continuation のように `sending` で回避できない）。
+/// 不変条件: 上記のとおり生成・consume はすべて @MainActor 上で完結しスレッドを跨がない。
+/// 除去計画: defaultIsolation(MainActor) / NonisolatedNonsendingByDefault（approachable
+/// concurrency）を導入した際に、BLESession 側の探索結果キャリアと併せて見直し・除去する。
 public struct Discovery: @unchecked Sendable {
 
     // MARK: Properties
