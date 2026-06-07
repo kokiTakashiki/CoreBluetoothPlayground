@@ -79,26 +79,16 @@ extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
     /// ため `@BLELog` の固定文では表現できず、切り札の `@DynamicBLELog` を使う。`source:` クロージャは
     /// 関数引数を仮引数として受け取り、マクロ展開時に関数引数を渡して呼び出される。
     @DynamicBLELog(source: { (central: CBCentralManager) in
-        switch central.state {
-        case .unknown:
-            return DynamicBLELogPayload(level: .info, message: "状態変化 unknown", label: "CBCentralManager")
-        case .resetting:
-            return DynamicBLELogPayload(level: .info, message: "状態変化 resetting", label: "CBCentralManager")
-        case .unsupported:
-            return DynamicBLELogPayload(level: .info, message: "状態変化 unsupported", label: "CBCentralManager")
-        case .unauthorized:
-            return DynamicBLELogPayload(level: .info, message: "状態変化 unauthorized", label: "CBCentralManager")
-        case .poweredOff:
-            return DynamicBLELogPayload(level: .info, message: "状態変化 poweredOff", label: "CBCentralManager")
-        case .poweredOn:
-            return DynamicBLELogPayload(level: .info, message: "状態変化 poweredOn", label: "CBCentralManager")
-        @unknown default:
-            return DynamicBLELogPayload(
-                level: .info,
-                message: "状態変化 unknown(\(central.state.rawValue))",
-                label: "CBCentralManager"
-            )
+        let message = switch central.state {
+        case .unknown: "状態変化 unknown"
+        case .resetting: "状態変化 resetting"
+        case .unsupported: "状態変化 unsupported"
+        case .unauthorized: "状態変化 unauthorized"
+        case .poweredOff: "状態変化 poweredOff"
+        case .poweredOn: "状態変化 poweredOn"
+        @unknown default: "状態変化 unknown(\(central.state.rawValue))"
         }
+        return DynamicBLELogPayload(level: .info, message: message, label: "CBCentralManager")
     })
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         onChange?()
