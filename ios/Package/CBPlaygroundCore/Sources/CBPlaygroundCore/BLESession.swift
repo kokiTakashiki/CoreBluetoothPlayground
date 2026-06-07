@@ -9,7 +9,7 @@ import Foundation
 // MARK: - BLESessionError
 
 /// BLESession が投げるエラー型。CoreBluetooth から受け取った NSError は
-/// `underlying` に包んで原因を保持する。
+/// 各ケースの関連値（`Error?`）に包んで原因を保持する。
 public enum BLESessionError: Error {
     /// Bluetooth が poweredOn 状態でない（スキャン・接続前チェック用）
     case notPoweredOn
