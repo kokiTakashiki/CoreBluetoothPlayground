@@ -102,17 +102,36 @@ final class CBCentralManagerPresenter: CBCentralManagerPresenterInput {
     }
 
     func onStartTapped(filterNUS: Bool, allowDuplicates: Bool) {
-        interactor.startScan(filterNUS: filterNUS, allowDuplicates: allowDuplicates)
-        view?.render(rows: makeRows(), scanning: true)
+        do {
+            try interactor.startScan(filterNUS: filterNUS, allowDuplicates: allowDuplicates)
+            view?.render(rows: makeRows(), scanning: true)
+        }
+        catch {
+            // 前提条件違反（state が .poweredOn でない等）。View にエラー文面を渡して通知する。
+            // ログは `@BLELog` の catch ブランチが既に `→ 失敗(<error>)` で残しているため、ここでは出さない。
+            view?.render(errorMessage: error.localizedDescription)
+        }
     }
 
     func onStopTapped() {
-        interactor.stopScan()
-        view?.render(rows: makeRows(), scanning: false)
+        do {
+            try interactor.stopScan()
+            view?.render(rows: makeRows(), scanning: false)
+        }
+        catch {
+            // スキャン中でなかった等の前提条件違反。View にエラー文面を渡して通知する。
+            view?.render(errorMessage: error.localizedDescription)
+        }
     }
 
     func onViewDidDisappear() {
-        interactor.stopScan()
+        do {
+            try interactor.stopScan()
+        }
+        catch {
+            // 画面が消えるタイミングでは元々スキャンしていない正常ケースが多く、エラー文面を出すと
+            // ユーザーには無関係なノイズになる。失敗ログは `@BLELog` 経由で残るので、ここでは黙殺する。
+        }
     }
 
     // MARK: Private

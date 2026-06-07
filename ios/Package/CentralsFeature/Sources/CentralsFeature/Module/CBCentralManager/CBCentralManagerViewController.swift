@@ -14,6 +14,10 @@ protocol CBCentralManagerViewInput: AnyObject {
 
     /// デバイス一覧とスキャン状態を反映する
     func render(rows: [DeviceRow], scanning: Bool)
+
+    /// 前提条件違反などのエラー文面を View 側に通知する。ユーザーへの最小通知が責務であり、
+    /// 表示の具体（アラート／トースト等）は実装側で選ぶ。
+    func render(errorMessage: String)
 }
 
 // MARK: - CBCentralManagerViewController
@@ -204,6 +208,12 @@ extension CBCentralManagerViewController: CBCentralManagerViewInput {
         deviceTableView.reloadData()
         startButton.isEnabled = !scanning
         stopButton.isEnabled = scanning
+    }
+
+    func render(errorMessage: String) {
+        let alert = UIAlertController(title: "エラー", message: errorMessage, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
 }
 

@@ -51,68 +51,31 @@ extension CBCentralScanInteractor: CBCentralManagerInteractorInput {
         discovered
     }
 
-    /// スキャンを開始する。プロトコル要件は戻り値を持てないため、ログと結末の解釈は `@BLELog` を付けた
-    /// `performStartScan(filterNUS:allowDuplicates:)` に委ね、このメソッド自体はログを持たない。
-    func startScan(filterNUS: Bool, allowDuplicates: Bool) {
-        performStartScan(filterNUS: filterNUS, allowDuplicates: allowDuplicates)
-    }
-
-    /// スキャンを停止する。プロトコル要件は戻り値を持てないため、ログと結末の解釈は `@BLELog` を付けた
-    /// `performStopScan()` に委ね、このメソッド自体はログを持たない。
-    func stopScan() {
-        performStopScan()
-    }
-
-    // MARK: Private
-
-    /// スキャン開始の本体。開始可否と条件を単一の結末文字列にまとめ、`@BLELog` が exit で 1 行記録する。
-    @discardableResult
+    /// スキャンを開始する。前提条件（state == .poweredOn）を満たさない場合は
+    /// `CBCentralManagerError.notPoweredOn` を throws する。`@BLELog` の catch ブランチが exit で
+    /// `→ 失敗(<error>)` のログを 1 行残すため、失敗経路のログも別途記述しない。
     @BLELog(message: "スキャン開始", label: "CBCentralManager")
-    private func performStartScan(filterNUS: Bool, allowDuplicates: Bool) -> String {
+    func startScan(filterNUS: Bool, allowDuplicates: Bool) throws {
         guard centralManager.state == .poweredOn
         else {
-            return "開始できません: \(stateDescription(for: centralManager.state))"
+            throw CBCentralManagerError.notPoweredOn(centralManager.state)
         }
-
         discovered = []
         onChange?()
-
         let serviceUUIDs: [CBUUID]? = filterNUS ? [BLEConstants.nusService] : nil
         let options: [String: Any] = [CBCentralManagerScanOptionAllowDuplicatesKey: allowDuplicates]
         centralManager.scanForPeripherals(withServices: serviceUUIDs, options: options)
-
-        let filterDescription = filterNUS ? "NUS フィルタ ON" : "フィルタなし"
-        let duplicatesDescription = allowDuplicates ? "重複許可 ON" : "重複許可 OFF"
-        return "[\(filterDescription), \(duplicatesDescription)]"
     }
 
-    /// スキャン停止の本体。スキャン中だったかと発見数を結末にまとめ、`@BLELog` が exit で 1 行記録する。
-    @discardableResult
+    /// スキャンを停止する。スキャン中でない場合は `CBCentralManagerError.notScanning` を throws する。
+    /// `@BLELog` が成功・失敗の双方を exit で 1 行ログに残す。
     @BLELog(message: "スキャン停止", label: "CBCentralManager")
-    private func performStopScan() -> String {
+    func stopScan() throws {
         guard centralManager.isScanning
         else {
-            return "スキャン中ではないため何もしません"
+            throw CBCentralManagerError.notScanning
         }
         centralManager.stopScan()
-        return "発見数 \(discovered.count)"
-    }
-
-    private func stateDescription(for state: CBManagerState) -> String {
-        switch state {
-        case .poweredOff:
-            "Bluetooth がオフです"
-        case .unauthorized:
-            "Bluetooth の使用が許可されていません"
-        case .unsupported:
-            "Bluetooth Low Energy がサポートされていません"
-        case .resetting:
-            "Bluetooth をリセット中です"
-        case .unknown:
-            "Bluetooth の状態が不明です"
-        default:
-            "Bluetooth が利用できません (state=\(state.rawValue))"
-        }
     }
 }
 

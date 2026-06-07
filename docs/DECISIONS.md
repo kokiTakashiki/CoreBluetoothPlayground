@@ -182,3 +182,19 @@
 - `ios/project.yml`: `CBPlaygroundLogging` をローカルパッケージに追加。
 - `Makefile`: `ios-build` から `-sdk iphonesimulator` を除去。`macro-test`（ホストで `swift test`）を追加し `ios-test` の依存に組み込む。
 - `.github/workflows/ci.yml`: macro 展開テストを機械ゲート化する `macro-test` ジョブ（macos-15 + 最新安定 Xcode）を追加。
+
+---
+
+### D-016: 前提条件のあるメソッドは Void で受けない（throws / async で契約を型に出す）
+
+**決定:** 前提条件のあるメソッドは Void で受けない。違反は throws で押し出し、待ちは async にする。`func foo() { guard cond else { return } ... }` の「Void + guard + silent return」は禁止する。`CBCentralManagerInteractorInput` の `startScan` / `stopScan` を `throws` 化し、違反は新設の `CBCentralManagerError`（`.notPoweredOn(CBManagerState)` / `.notScanning`）で表す。Presenter は do/catch で受け、View に `render(errorMessage:)` で伝える。
+
+**理由:** 黙って no-op する API は、呼び出し側からは関数が走ったか走らなかったか区別できない。本リポジトリでは隠れた前提条件を `performStartScan() -> String` + `@discardableResult` というパターンで「結末を戻り値で語る」形に偽装してログ payload として消費していたが、`@discardableResult` が必要になる時点で「これは本物の戻り値ではない」というシグナル（戻り値は呼び出し側のためではなく、マクロの結末ログのためだけに存在していた）。throws で押し出せば、(a) 契約が型として明示され、(b) View がエラーを表示でき、(c) `@BLELog` の catch ブランチが `→ 失敗(<error>)` で自動的にエラーログまで取れる、と一石三鳥になる。`@discardableResult` の嘘の宣言も不要になる。
+
+**影響範囲:**
+- `CentralsFeature/Module/CBCentralManager/CBCentralManagerError.swift`: 新設。`.notPoweredOn(CBManagerState)` と `.notScanning`、`LocalizedError` 準拠。旧 `CBCentralScanInteractor.stateDescription(for:)` の状態文言は DRY のため Error 側へ移植し、Interactor からは削除する。
+- `CBCentralManagerInteractorInput`: `startScan(filterNUS:allowDuplicates:) throws` / `stopScan() throws` に変更。`currentState()` / `discoveries()` は情報取得であり throws しない。
+- `CBCentralScanInteractor`: `performStartScan` / `performStopScan` 委譲メソッドを撤去し、`startScan` / `stopScan` 自体に `@BLELog` を付ける。`@discardableResult` は本ファイル内の該当箇所から全廃。
+- `CBCentralManagerPresenter`: `onStartTapped` / `onStopTapped` / `onViewDidDisappear` で `try` を do/catch で囲み、catch で `view?.render(errorMessage:)` を呼ぶ（`onViewDidDisappear` は元々スキャンしていない正常ケースでノイズになるので黙殺する）。
+- `CBCentralManagerViewInput` / `CBCentralManagerViewController`: `func render(errorMessage: String)` を追加。実装は `UIAlertController` で最小通知する。
+- delegate コールバック側 (`recordStateChange` / `record`) の helpers は今回触らない。これらは前提条件を隠していない（観察情報をログに載せるための別軸の議論）ため、本決定のスコープ外であり、別 PR で扱う。
