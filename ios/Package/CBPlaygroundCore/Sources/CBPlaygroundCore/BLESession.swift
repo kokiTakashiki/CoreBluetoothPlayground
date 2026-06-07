@@ -260,22 +260,9 @@ extension BLESession: @preconcurrency CBCentralManagerDelegate {
         onStateChange?()
     }
 
-    /// 発見イベント。CBCentralManagerDelegate の要件で戻り値は持てず、対象（peripheral）の情報を message に
-    /// 載せたいため `@DynamicBLELog` で peripheral.name を含むメッセージを動的に組み立てる。
-    @DynamicBLELog(failureLabel: "BLESession", source: { (
-        _: CBCentralManager,
-        peripheral: CBPeripheral,
-        _: [String: Any],
-        rssi: NSNumber
-    ) in
-        let name = peripheral.name ?? "(no name)"
-        let identifierPrefix = peripheral.identifier.uuidString.prefix(8)
-        return DynamicBLELogPayload(
-            level: .debug,
-            message: "発見 \(name) [\(identifierPrefix)…] RSSI=\(rssi)",
-            label: "BLESession"
-        )
-    })
+    /// 発見イベント。BLESession はラッパーであり、発見イベントの観察軸は CBCentralManager 側
+    /// = Interactor 層（`recordUpdated` / `recordAdded` の `@BLELog`）で取る。BLESession 軸のログは
+    /// state 変化・接続・切断・探索のような state-bearing イベントに留めてノイズを抑える。
     public func centralManager(
         _ central: CBCentralManager,
         didDiscover peripheral: CBPeripheral,
