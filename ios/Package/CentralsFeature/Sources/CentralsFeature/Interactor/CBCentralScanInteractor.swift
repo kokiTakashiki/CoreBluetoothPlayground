@@ -82,8 +82,8 @@ extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
         onChange?()
     }
 
-    /// CBCentralManagerDelegate の要件であり戻り値は持てない。発見の蓄積・更新と結末ログは
-    /// `@BLELog` を付けた `record(_:)` に委ね、このメソッド自体はログを持たない。
+    /// CBCentralManagerDelegate の要件であり戻り値は持てない。新規発見か既知デバイスの再広告かで
+    /// 観察上の意味が違うため、ここで分岐して別々の `@BLELog` メソッドへ振り分ける。
     func centralManager(
         _ central: CBCentralManager,
         didDiscover peripheral: CBPeripheral,
@@ -91,7 +91,12 @@ extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
         rssi RSSI: NSNumber
     ) {
         let discovery = Discovery(peripheral: peripheral, advertisementData: advertisementData, rssi: RSSI)
-        record(discovery)
+        if let index = discovered.firstIndex(where: { $0.peripheral.identifier == peripheral.identifier }) {
+            recordUpdated(discovery, at: index)
+        }
+        else {
+            recordAdded(discovery)
+        }
         onChange?()
     }
 
@@ -102,23 +107,17 @@ extension CBCentralScanInteractor: @preconcurrency CBCentralManagerDelegate {
         centralStateDescription(for: state)
     }
 
-    /// 発見結果を蓄積（同一識別子なら更新、無ければ追加）し、結末文字列を返す。
-    /// 更新と追加で別ログを出していたのを 1 つの結末文字列に集約し、`@BLELog` が exit で 1 行記録する。
-    @discardableResult
-    @BLELog(message: "発見", label: "CBCentralManager")
-    private func record(_ discovery: Discovery) -> String {
-        let peripheral = discovery.peripheral
-        let name = peripheral.name ?? "(no name)"
-        let identifierPrefix = peripheral.identifier.uuidString.prefix(8)
+    /// 既知 identifier の再広告を反映する。観察上は「同じデバイスが再び見えた」イベントで、追加とは
+    /// 区別したい（広告周期や RSSI の揺れを見る軸）。`@BLELog` の message で「再広告」を明示する。
+    @BLELog(message: "発見(再広告)", label: "CBCentralManager")
+    private func recordUpdated(_ discovery: Discovery, at index: Int) {
+        discovered[index] = discovery
+    }
 
-        if let index = discovered.firstIndex(where: { $0.peripheral.identifier == peripheral.identifier }) {
-            discovered[index] = discovery
-            return "更新 \(name) [\(identifierPrefix)…] RSSI=\(discovery.rssi)"
-        }
-        else {
-            discovered.append(discovery)
-            return "追加 \(name) [\(identifierPrefix)…] RSSI=\(discovery.rssi)"
-        }
+    /// 未知 identifier の発見を蓄積に追加する。`@BLELog` の message で「新規」を明示する。
+    @BLELog(message: "発見(新規)", label: "CBCentralManager")
+    private func recordAdded(_ discovery: Discovery) {
+        discovered.append(discovery)
     }
 
     private func centralStateDescription(for state: CBManagerState) -> String {
