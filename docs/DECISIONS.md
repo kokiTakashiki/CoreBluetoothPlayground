@@ -155,7 +155,9 @@
 
 ### D-015: ログ取得を `@BLELog` body マクロに一本化し、ログの取り方を規律で縛る
 
-**決定:** ログ取得を Swift Macro（`@attached(body)` の `@BLELog`）へ一本化する。各型に重複していた `private static let logLabel` と `private func log(_:)`、および散在する `BLELog.log(...)` 直書きを廃止し、ログは `@BLELog` を付けたメソッドの脱出（exit）でちょうど 1 行だけ出す形に集約する。マクロ実装は新設の SwiftPM パッケージ `CBPlaygroundMacros`（`.macro` 実装ターゲット `CBPlaygroundMacrosPlugin` + 公開ライブラリ `CBPlaygroundMacros`）に置く。
+**決定:** ログ取得を Swift Macro（`@attached(body)` の `@BLELog`）へ一本化する。各型に重複していた `private static let logLabel` と `private func log(_:)`、および散在する `BLELog.log(...)` 直書きを廃止し、ログは `@BLELog` を付けたメソッドの脱出（exit）でちょうど 1 行だけ出す形に集約する。マクロ実装は新設の SwiftPM パッケージ `CBPlaygroundLogging`（`.macro` 実装ターゲット `CBPlaygroundLoggingMacros` + 公開ライブラリ `CBPlaygroundLogging`）に置く。
+
+**命名方針（パッケージ名はドメインで名乗る）:** パッケージ名は「Swift Macros を集めたもの」のような実装手段ではなく、提供するドメイン（ログ機能）で名乗る。そのため公開パッケージ／公開ライブラリは `CBPlaygroundLogging` とし、実装手段の Swift Macros は内部ターゲット名 `CBPlaygroundLoggingMacros`（「Logging パッケージのマクロ実装」と読める形）へ追いやる。マクロ名そのもの（`BLELog` / `BLELogLevel` / `BLELogRuntime`）は `BLE` 接頭辞でドメインが十分明示できているため改名しない。
 
 **理由（最重要 = 設計思想）:** 狙いはボイラープレート削減ではなく、ログの取り方を規律で縛ること。ログは簡単に取れるからこそ取りすぎ・取らなすぎが起きる。そこでマクロの不自由さを使い「1 メソッド = ログ 1 行（exit で 1 回だけ）」を強制する。途中経過のログは書けないため、1 行で説明しきれないメソッドは責務過多のシグナルとみなせる。これにより、旧実装で分岐ごとに別々のログを出していた箇所（`startScan` の開始可否、`didDiscover` の更新/追加）は、結末を表す文字列を返すメソッドへ分割し、その単一の戻り値を結末として記録する形へ自然に矯正される。
 
@@ -174,9 +176,9 @@
 - **swift-syntax のビルド時間増:** swift-syntax 602.0.0 のビルドを伴うぶん初回ビルドが重くなるのは織り込み済み。
 
 **影響:**
-- `ios/Package/CBPlaygroundMacros/`: 新規パッケージ。`.macro` ターゲット `CBPlaygroundMacrosPlugin`（`BLELogMacro` / `BLELogArguments` / `BLELogDiagnostic` / `Plugin`）と公開ライブラリ `CBPlaygroundMacros`（`@BLELog` 宣言・`BLELogLevel`・ランタイム facade `BLELogRuntime`）。swift-syntax は D-008 準拠でコミット SHA `4799286537280063c85a32f09884cfbca301b1a1`（602.0.0）に固定。Pulse は既存と同一 SHA。
-- `CBPlaygroundCore`: 旧 `BLELog.swift`（Pulse facade）を削除。唯一の Pulse 利用者だったため `CBPlaygroundCore` の Pulse 依存も撤去。ログ facade は `CBPlaygroundMacros` の `BLELogRuntime` へ移管（D-014 の `BLELog.log(...)` 直通は `@BLELog` 経由へ置換）。
-- `CentralsFeature`: `CBPlaygroundMacros` 依存追加。`CBCentralScanInteractor` の `logLabel` / `log(_:)` を削除し、5 箇所のログを `@BLELog` 付きメソッドへ移行。`CBCentralManagerDelegate` 要件（戻り値を持てない）と `CBCentralManagerInteractorInput` 要件（Void）は薄い委譲メソッドにし、ログは結末文字列を返す private 本体メソッドへ寄せて 1 メソッド 1 ログを守る。
-- `ios/project.yml`: `CBPlaygroundMacros` をローカルパッケージに追加。
+- `ios/Package/CBPlaygroundLogging/`: 新規パッケージ。`.macro` ターゲット `CBPlaygroundLoggingMacros`（`BLELogMacro` / `BLELogArguments` / `BLELogDiagnostic` / `Plugin`）と公開ライブラリ `CBPlaygroundLogging`（`@BLELog` 宣言・`BLELogLevel`・ランタイム facade `BLELogRuntime`）。swift-syntax は D-008 準拠でコミット SHA `4799286537280063c85a32f09884cfbca301b1a1`（602.0.0）に固定。Pulse は既存と同一 SHA。
+- `CBPlaygroundCore`: 旧 `BLELog.swift`（Pulse facade）を削除。唯一の Pulse 利用者だったため `CBPlaygroundCore` の Pulse 依存も撤去。ログ facade は `CBPlaygroundLogging` の `BLELogRuntime` へ移管（D-014 の `BLELog.log(...)` 直通は `@BLELog` 経由へ置換）。
+- `CentralsFeature`: `CBPlaygroundLogging` 依存追加。`CBCentralScanInteractor` の `logLabel` / `log(_:)` を削除し、5 箇所のログを `@BLELog` 付きメソッドへ移行。`CBCentralManagerDelegate` 要件（戻り値を持てない）と `CBCentralManagerInteractorInput` 要件（Void）は薄い委譲メソッドにし、ログは結末文字列を返す private 本体メソッドへ寄せて 1 メソッド 1 ログを守る。
+- `ios/project.yml`: `CBPlaygroundLogging` をローカルパッケージに追加。
 - `Makefile`: `ios-build` から `-sdk iphonesimulator` を除去。`macro-test`（ホストで `swift test`）を追加し `ios-test` の依存に組み込む。
 - `.github/workflows/ci.yml`: macro 展開テストを機械ゲート化する `macro-test` ジョブ（macos-15 + 最新安定 Xcode）を追加。

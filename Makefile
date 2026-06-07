@@ -37,7 +37,7 @@ ios-project: ## project.yml から .xcodeproj を生成する（XcodeGen）
 
 ios-build: ios-project ## シミュレータ向けにビルドする（署名なし）
 	# -sdk iphonesimulator は付けない。これを付けると Swift Macro のコンパイラプラグイン
-	# （CBPlaygroundMacrosPlugin）までシミュレータ SDK でビルドされ、ホストで実行できず
+	# （CBPlaygroundLoggingMacros）までシミュレータ SDK でビルドされ、ホストで実行できず
 	# 「produced malformed response」となる。-destination だけ指定し、プラグインはホスト
 	# （macOS）向けに、アプリ本体はシミュレータ向けにビルドさせる。
 	cd $(IOS_DIR) && xcodebuild \
@@ -65,7 +65,7 @@ ios-test: ios-project macro-test ## シミュレータでテストを実行す�
 macro-test: ## マクロ展開ユニットテストを実行する（ホスト macOS 上で swift test）
 	# Swift Macro の展開はホスト（macOS）上でしか実行できないため、iOS シミュレータの
 	# テストスキームには載せず、SwiftPM で直接 swift test する。
-	cd $(IOS_DIR)/Package/CBPlaygroundMacros && swift test
+	cd $(IOS_DIR)/Package/CBPlaygroundLogging && swift test
 
 flash-normal: _require-submodule ## 正常系 peripheral_uart を nRF52840 DK に書き込む
 	$(MAKE) -C $(SUBMODULE_DIR) flash-dk BOARD=$(BOARD) SERIAL_PORT=$(SERIAL_PORT)

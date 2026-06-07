@@ -1,6 +1,6 @@
 //
 //  BLELogArguments.swift
-//  CBPlaygroundMacrosPlugin
+//  CBPlaygroundLoggingMacros
 //
 
 import SwiftSyntax

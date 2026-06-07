@@ -18,8 +18,8 @@ packages:
     path: Package/CBPlaygroundCore
   CBPlaygroundConsole:
     path: Package/CBPlaygroundConsole
-  CBPlaygroundMacros:
-    path: Package/CBPlaygroundMacros
+  CBPlaygroundLogging:
+    path: Package/CBPlaygroundLogging
   CentralsFeature:
     path: Package/CentralsFeature
 

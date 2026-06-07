@@ -1,9 +1,9 @@
 //
 //  BLELogMacroTests.swift
-//  CBPlaygroundMacrosTests
+//  CBPlaygroundLoggingTests
 //
 
-import CBPlaygroundMacrosPlugin
+import CBPlaygroundLoggingMacros
 import SwiftSyntaxMacros
 import SwiftSyntaxMacrosTestSupport
 import XCTest

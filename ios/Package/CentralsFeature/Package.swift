@@ -11,7 +11,7 @@ let package = Package(
     dependencies: [
         .package(path: "../CBPlaygroundCore"),
         .package(path: "../CBPlaygroundConsole"),
-        .package(path: "../CBPlaygroundMacros"),
+        .package(path: "../CBPlaygroundLogging"),
     ],
     targets: [
         .target(
@@ -19,7 +19,7 @@ let package = Package(
             dependencies: [
                 .product(name: "CBPlaygroundCore", package: "CBPlaygroundCore"),
                 .product(name: "CBPlaygroundConsole", package: "CBPlaygroundConsole"),
-                .product(name: "CBPlaygroundMacros", package: "CBPlaygroundMacros"),
+                .product(name: "CBPlaygroundLogging", package: "CBPlaygroundLogging"),
             ]
         ),
         .testTarget(

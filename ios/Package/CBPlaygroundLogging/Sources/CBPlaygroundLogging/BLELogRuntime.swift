@@ -1,6 +1,6 @@
 //
 //  BLELogRuntime.swift
-//  CBPlaygroundMacros
+//  CBPlaygroundLogging
 //
 
 import Pulse

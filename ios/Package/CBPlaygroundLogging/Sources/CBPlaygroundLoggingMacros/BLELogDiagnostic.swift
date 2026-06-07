@@ -1,6 +1,6 @@
 //
 //  BLELogDiagnostic.swift
-//  CBPlaygroundMacrosPlugin
+//  CBPlaygroundLoggingMacros
 //
 
 import SwiftDiagnostics
@@ -24,7 +24,7 @@ enum BLELogDiagnostic: String, DiagnosticMessage {
     }
 
     var diagnosticID: MessageID {
-        MessageID(domain: "CBPlaygroundMacros", id: rawValue)
+        MessageID(domain: "CBPlaygroundLogging", id: rawValue)
     }
 
     var severity: DiagnosticSeverity {

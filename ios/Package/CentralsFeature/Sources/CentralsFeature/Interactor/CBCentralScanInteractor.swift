@@ -4,7 +4,7 @@
 //
 
 import CBPlaygroundCore
-import CBPlaygroundMacros
+import CBPlaygroundLogging
 import CoreBluetooth
 import Foundation
 

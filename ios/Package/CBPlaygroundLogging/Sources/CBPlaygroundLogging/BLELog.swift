@@ -1,6 +1,6 @@
 //
 //  BLELog.swift
-//  CBPlaygroundMacros
+//  CBPlaygroundLogging
 //
 
 /// メソッドの脱出時（exit）にちょうど 1 行だけログを出す body マクロ。
@@ -31,4 +31,4 @@ public macro BLELog(
     level: BLELogLevel = .info,
     message: String,
     label: String? = nil
-) = #externalMacro(module: "CBPlaygroundMacrosPlugin", type: "BLELogMacro")
+) = #externalMacro(module: "CBPlaygroundLoggingMacros", type: "BLELogMacro")

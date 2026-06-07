@@ -3,12 +3,12 @@ import CompilerPluginSupport
 import PackageDescription
 
 let package = Package(
-    name: "CBPlaygroundMacros",
+    name: "CBPlaygroundLogging",
     defaultLocalization: "ja",
     platforms: [.iOS("26.0"), .macOS("13.0")],
     products: [
         // マクロを利用側へ公開するライブラリ。`@BLELog` の宣言と、Pulse へ書き込むランタイム facade を含む。
-        .library(name: "CBPlaygroundMacros", targets: ["CBPlaygroundMacros"]),
+        .library(name: "CBPlaygroundLogging", targets: ["CBPlaygroundLogging"]),
     ],
     dependencies: [
         // サプライチェーン対策でタグではなくコミット SHA で固定する（D-008 と同方針）。
@@ -22,8 +22,9 @@ let package = Package(
     ],
     targets: [
         // マクロ実装本体（コンパイラプラグイン）。ビルドホスト（macOS）上で動く。
+        // パッケージのドメインは「ログ機能」であり、このターゲット名は「Logging パッケージのマクロ実装」と読める形にしている。
         .macro(
-            name: "CBPlaygroundMacrosPlugin",
+            name: "CBPlaygroundLoggingMacros",
             dependencies: [
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
@@ -32,17 +33,17 @@ let package = Package(
         ),
         // 利用側が import するライブラリ。マクロ宣言とランタイム facade `BLELogRuntime` を公開する。
         .target(
-            name: "CBPlaygroundMacros",
+            name: "CBPlaygroundLogging",
             dependencies: [
-                "CBPlaygroundMacrosPlugin",
+                "CBPlaygroundLoggingMacros",
                 .product(name: "Pulse", package: "Pulse"),
             ]
         ),
         // マクロ展開のユニットテスト。各シグネチャパターンの展開を文字列比較で検証する。
         .testTarget(
-            name: "CBPlaygroundMacrosTests",
+            name: "CBPlaygroundLoggingTests",
             dependencies: [
-                "CBPlaygroundMacrosPlugin",
+                "CBPlaygroundLoggingMacros",
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
             ]
         ),
