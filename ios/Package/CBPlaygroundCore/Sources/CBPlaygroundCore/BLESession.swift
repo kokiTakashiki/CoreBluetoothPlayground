@@ -100,9 +100,8 @@ public final class BLESession: NSObject {
     // MARK: Lifecycle
 
     /// CBCentralManager を `queue: .main` で生成し、CBCentralManagerDelegate を引き受ける。
-    /// `@BLELog` はメソッド宣言にのみ付与でき初期化子に付けられないため、初期化は無音とする。
-    /// 状態変化（最初の `centralManagerDidUpdateState` で .unknown → .poweredOn など）が
-    /// `@DynamicBLELog` で観察されるため、観察軸として失われる情報はない。
+    /// BLESession 自体はラッパーであり、観察対象は CoreBluetooth の振る舞いそのもの。最初の観察データは
+    /// `centralManagerDidUpdateState` の最初の遷移（典型的には .unknown → .poweredOn）で得られる。
     override public init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: .main)
