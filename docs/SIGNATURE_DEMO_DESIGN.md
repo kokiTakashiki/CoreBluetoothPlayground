@@ -9,7 +9,7 @@
 | 章 | 題 |
 | --- | --- |
 | 1 | 目的とスコープ |
-| 2 | 凡例（2.1 カタログ表の列 / 2.2 「扱い」の 4 区分 / 2.3 観察軸） |
+| 2 | 記法と用語の定義（2.1 カタログ表の列 / 2.2 「扱い」の 4 区分 / 2.3 観察軸） |
 | 3 | ファームウェア前提（デモ可否の土台） |
 | 4 | カテゴリ章（4.1 Centrals / 4.2 Peripherals / 4.3 Services / 4.4 Supporting / 4.5 Errors / 4.6 Variables） |
 | 5 | CBCharacteristic の完全記述（5.1 read と write / 5.2 notify と indicate / 5.3 properties・value・descriptors・isNotifying / 5.4 暗号化と異常系） |
@@ -27,7 +27,7 @@
 
 ---
 
-## 2. 凡例
+## 2. 記法と用語の定義
 
 ### 2.1 カタログ表の列
 
