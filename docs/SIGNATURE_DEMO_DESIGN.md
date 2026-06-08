@@ -54,7 +54,7 @@
 
 この GATT には read プロパティを持つキャラクタリスティックが無く、indicate も無く、暗号化やペアリングの要求も無く、L2CAP チャネルの公開も無い。そのため stock NUS で観察できるのは、スキャンと発見、接続と切断、サービスとキャラクタリスティックの探索、RX への write（応答ありと応答なしの両モード）、TX の notify 購読、そして MTU 交渉までである。これらは BLE I/O を伴うが NUS の GATT だけで完結するため「デモ(NUS)」に分類する。
 
-一方で、正常な read の観察、indicate の購読、暗号化必須キャラクタリスティックへのアクセスとそれに伴う `CBATTError.insufficientEncryption` やペアリングの誘発、確実な Long Write の誘発、L2CAP チャネルの開設は、いずれも stock NUS の GATT に対象が存在しない。これらを実機デモ化するには、read 可能なキャラクタリスティック・indicate キャラクタリスティック・暗号化権限を付けたキャラクタリスティック・L2CAP CoC を公開するカスタム GATT（本書では `anomaly_*` と総称する）が必要であり、「デモ(要カスタムFW)」に分類する。なお、このカスタム firmware 本体（`firmware/anomaly_*/` の自前ビルド）はまだ着手しておらず、実装計画の付録 E と PR#4（firmware + Sniffer 増分）で初めて用意される想定である。したがって本書で「デモ(要カスタムFW)」と分類したシグネチャの実機観察は、PR#4 が入るまで保留となる。
+一方で、正常な read の観察、indicate の購読、暗号化必須キャラクタリスティックへのアクセスとそれに伴う `CBATTError.insufficientEncryption` やペアリングの誘発、確実な Long Write の誘発、L2CAP チャネルの開設は、いずれも stock NUS の GATT に対象が存在しない。これらを実機デモ化するには、read 可能なキャラクタリスティック・indicate キャラクタリスティック・暗号化権限を付けたキャラクタリスティック・L2CAP CoC を公開するカスタム GATT（本書では `anomaly_*` と総称する）が必要であり、「デモ(要カスタムFW)」に分類する。なお、このカスタム firmware 本体（`firmware/anomaly_*/` の自前ビルド）はまだ着手しておらず、実装計画の付録 E が定める firmware + Sniffer 増分で初めて用意される想定である。したがって本書で「デモ(要カスタムFW)」と分類したシグネチャの実機観察は、その firmware + Sniffer 増分が入るまで保留となる。
 
 stock NUS で完結する範囲と、カスタム firmware を要する範囲の切り分けを次に示す。
 
@@ -68,7 +68,7 @@ graph TD
         NT["TX の notify 購読（CCCD）"]
         MT["MTU 交渉 / maximumWriteValueLength"]
     end
-    subgraph "カスタム firmware（anomaly_*, PR#4 で用意）が要る範囲"
+    subgraph "カスタム firmware（anomaly_*, firmware + Sniffer 増分で用意）が要る範囲"
         RD["正常な read（read 可能キャラ）"]
         IN["indicate 購読"]
         EN["暗号化必須キャラ → insufficientEncryption / ペアリング"]
@@ -675,10 +675,10 @@ indicate について。NUS には indicate プロパティを持つキャラク
 | --- | --- | --- |
 | 土台 + CBCentralManager（済 / PR1） | CBCentralManager・CBCentralManagerDelegate・CBCentralManager.Feature・Central 側広告/オプション定数・CBManager / CBManagerState（参照）・CBUUID（参照） | なし（stock NUS の発見・接続/切断で完結） |
 | CBPeripheral（済 / PR2） | CBPeripheral・CBPeripheralDelegate・CBService・CBPeripheralState・CBAttribute（参照）・CBPeer（参照） | なし（stock NUS の探索・RSSI・切断で完結） |
-| CBCharacteristic（次） | CBCharacteristic・CBCharacteristicProperties・CBCharacteristicWriteType | 一部のみ（read 正常系・indicate・暗号化エラーは PR#4 のカスタム firmware に依存。write 両モード・notify・MTU は stock NUS で先行可能） |
+| CBCharacteristic（次） | CBCharacteristic・CBCharacteristicProperties・CBCharacteristicWriteType | 一部のみ（read 正常系・indicate・暗号化エラーは firmware + Sniffer 増分のカスタム firmware に依存。write 両モード・notify・MTU は stock NUS で先行可能） |
 | CBDescriptor | CBDescriptor・記述子 UUID 文字列定数 | 一部（CCCD は stock NUS、観測スケジュール記述子(0x2910)等はカスタム firmware） |
 | CBPeripheralManager（iOS を Peripheral 役） | CBPeripheralManager・CBPeripheralManagerDelegate・CBMutableService・CBMutableCharacteristic・CBMutableDescriptor・CBAttributePermissions・CBATTRequest・CBCentral（maximumUpdateValueLength） | iOS 自身が Peripheral 役になるため対向 Central は要るが開発キット firmware は不要 |
-| firmware + Sniffer（PR#4） | （観測基盤）`anomaly_*` カスタム GATT の用意。read 可能キャラ・indicate キャラ・暗号化必須キャラ・L2CAP CoC を公開し、上記増分で「デモ(要カスタムFW)」とした観察を有効化する | これ自体がカスタム firmware の供給元 |
+| firmware + Sniffer 増分 | （観測基盤）`anomaly_*` カスタム GATT の用意。read 可能キャラ・indicate キャラ・暗号化必須キャラ・L2CAP CoC を公開し、上記増分で「デモ(要カスタムFW)」とした観察を有効化する | これ自体がカスタム firmware の供給元 |
 | 任意拡張 | CBL2CAPChannel・CBL2CAPPSM・CBConnectionEvent・CBError / CBATTError の深掘り・ANCS 関連 | L2CAP・接続イベント・各種エラー誘発はカスタム firmware に依存 |
 
-この対応表が示すとおり、CBCharacteristic 増分のデモは二段に分かれる。write の両モード・notify 購読・MTU 交渉・各プロパティの観察は stock NUS だけで先行して実装・検証できるが、read の正常系・indicate・暗号化エラー（`CBATTError.insufficientEncryption`）とペアリングの観察は、カスタム firmware を供給する firmware + Sniffer 増分（PR#4）が入って初めて実機で有効になる。したがって CBCharacteristic 増分は「stock NUS で取れる範囲を先に実装し、カスタム firmware 依存の観察は PR#4 後に追記する」という二段構えで進めることになる。本書の各「使い勝手(状態)」列は、この二段の進行に合わせて随時更新していく。
+この対応表が示すとおり、CBCharacteristic 増分のデモは二段に分かれる。write の両モード・notify 購読・MTU 交渉・各プロパティの観察は stock NUS だけで先行して実装・検証できるが、read の正常系・indicate・暗号化エラー（`CBATTError.insufficientEncryption`）とペアリングの観察は、カスタム firmware を供給する firmware + Sniffer 増分が入って初めて実機で有効になる。したがって CBCharacteristic 増分は「stock NUS で取れる範囲を先に実装し、カスタム firmware 依存の観察はその増分の後に追記する」という二段構えで進めることになる。本書の各「使い勝手(状態)」列は、この二段の進行に合わせて随時更新していく。
