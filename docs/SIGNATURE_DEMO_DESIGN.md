@@ -4,6 +4,19 @@
 
 ---
 
+## 目次
+
+| 章 | 題 |
+| --- | --- |
+| 1 | 目的とスコープ |
+| 2 | 凡例（2.1 カタログ表の列 / 2.2 「扱い」の 4 区分 / 2.3 観察軸） |
+| 3 | ファームウェア前提（デモ可否の土台） |
+| 4 | カテゴリ章（4.1 Centrals / 4.2 Peripherals / 4.3 Services / 4.4 Supporting / 4.5 Errors / 4.6 Variables） |
+| 5 | CBCharacteristic の完全記述（5.1 read と write / 5.2 notify と indicate / 5.3 properties・value・descriptors・isNotifying / 5.4 暗号化と異常系） |
+| 6 | 実装増分との対応 |
+
+---
+
 ## 1. 目的とスコープ
 
 本書の対象は Apple が文書化している CoreBluetooth の全シンボルである。クラス・構造体・列挙・プロトコル・OptionSet・トップレベル定数・型エイリアスのすべてを、宣言された個々のシグネチャまで分解して列挙する。非推奨シンボルは原則として除外し、除外したものは各小節の末尾に名前のみを残して理由を添える（iOS 26 / Swift 6 を前提とするため、置換済みの旧 API を実装対象に含めない）。
