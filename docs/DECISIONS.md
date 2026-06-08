@@ -270,3 +270,20 @@
 - `CBPlaygroundCore/Sources/CBPlaygroundCore/BLESession.swift`: キャリア構造体・`DisconnectionEvent`・`disconnectionEvents()`・`scanContinuation` を撤去。`onDiscovery` プロパティと `isScanning` フラグを追加。`startScan` は戻り値なし、探索系は Void continuation + 読み戻しに変更。
 - `CBPlaygroundCore/Sources/CBPlaygroundCore/Discovery.swift`: `@unchecked Sendable` を外し素の `struct` に戻す。
 - `CentralsFeature/.../Interactor/CBCentralScanInteractor.swift` / `CBPeripheralInteractor.swift`: `AsyncStream` 購読（`scanTask`）を撤去し、`session.onDiscovery` を設定して `handleDiscovery(_:)` で同期蓄積する形に変更。`stopScan` で `onDiscovery = nil`。
+
+---
+
+### D-020: シグネチャ単位デモ設計書をリビング文書として導入する
+
+**決定:** Apple CoreBluetooth の全シンボルを「シグネチャ単位」でカタログ化し、各シグネチャに「ファームウェアを使った実機デモ設計」または「ドキュメント＋コード検証による使い勝手確認」のいずれかを割り当てるマスター設計書 `docs/SIGNATURE_DEMO_DESIGN.md` を新設する（リポジトリ全体で 1 ファイル）。これはリビング文書とし、コード検証で得る「使い勝手」は各実装増分の完了時に後から追記していく。
+
+**検討した案と採否（案 A 採用）:** 案 A は「全シグネチャの棚卸しとデモ設計を先に 1 文書として確定させ、コード検証の使い勝手は各増分で追記する」。案 B は「各増分の実装と同時に、その増分が触るシグネチャの設計だけをその都度書く」。案 A を採る。理由は、シグネチャ粒度の網羅トラッカーを先に固定しておくと、どのシグネチャが stock NUS でデモ可能か・どれがカスタム firmware を要するか・どれがそもそもデモにならないか（doc+コード検証）という分類が増分横断で一望でき、増分の進め方（PR#4 の firmware 依存をどこまで先送りできるか）を計画段階で見切れるからである。案 B は文書が増分ごとに断片化し、全体俯瞰が失われる。
+
+**デモ可否は firmware に依存し、その境界を文書内で切り分ける:** 実機デモの可否は対向機器の GATT が何を公開するかで決まる。本書は実機デモを次の 3 区分に切り分け、これに doc 系を加えた計 4 区分で「扱い」を統一する。(1) stock `peripheral_uart`（NUS）で観察できる範囲＝探索・接続/切断・write（両モード）・notify 購読・MTU 交渉。これを「デモ(NUS)」とする。(2) NUS の GATT に対象が存在せず、read 可能キャラ・indicate キャラ・暗号化必須キャラ・L2CAP CoC を持つカスタム GATT（`anomaly_*`）を要する範囲。これを「デモ(要カスタムFW)」とする。(3) iOS 自身を Peripheral 役にし、観察に対向 Central（別の iOS / Mac 等）との I/O を要する範囲。これを「デモ(要対向Central)」とする（開発キット firmware には依存しない。CBPeripheralManager 系が該当）。BLE I/O を伴わずローカル完結するもの・基底クラス・定数・型エイリアスは「doc+コード検証」とする。カスタム firmware 本体は未着手であり、実装計画の付録 E・PR#4（firmware + Sniffer 増分）で初めて用意される。
+
+**フォーマットの代表例を CBCharacteristic で確定:** カタログ表（`シグネチャ / 種別 / 扱い / 観察する振る舞い / デモ方法 / 検証メモ / 使い勝手(状態)` の 6 列固定）に加え、CBCharacteristic の各シグネチャは read/write(両モード)/notify・indicate/properties/value/descriptors/isNotifying について、観察したい振る舞い・必要 firmware・操作手順と期待結果・関係する異常系を文章で作り込み、後続クラスが踏襲するフォーマットを固定する。read と indicate と暗号化は stock NUS に無いためカスタム firmware 前提である旨を明記する。
+
+**影響:**
+- `docs/SIGNATURE_DEMO_DESIGN.md`: 新規作成。
+- `docs/README.md`: 索引表に本書の行を追加。
+- 既存の `docs/interface-mapping.md`（クラス粒度の網羅トラッカー）とは粒度が異なり、本書はシグネチャ粒度でこれを補完する（interface-mapping.md は今回変更しない）。
